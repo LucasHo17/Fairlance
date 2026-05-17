@@ -104,6 +104,7 @@ export default function App() {
                   user={user}
                   onLogout={handleLogout}
                   onSwitchToClient={handleSwitchToClient}
+                  onViewTransactions={() => navigate('/transactions')}
                 />
               )
               : <Navigate to="/" />

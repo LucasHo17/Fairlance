@@ -208,6 +208,7 @@ export class Transaction {
   listingTitle?: string;
   freelancerName?: string;
   customerName?: string;
+  hasReview?: boolean;
 
   constructor(data: {
     id: string;
@@ -221,6 +222,7 @@ export class Transaction {
     listingTitle?: string;
     freelancerName?: string;
     customerName?: string;
+    hasReview?: boolean;
   }) {
     this.id             = data.id;
     this.offerId        = data.offerId;
@@ -233,6 +235,7 @@ export class Transaction {
     this.listingTitle   = data.listingTitle;
     this.freelancerName = data.freelancerName;
     this.customerName   = data.customerName;
+    this.hasReview      = data.hasReview;
   }
 
   /**
@@ -269,6 +272,7 @@ export class Transaction {
       listingTitle:   (row.listing_title as string) ?? undefined,
       freelancerName: (row.freelancer_name as string) ?? undefined,
       customerName:   (row.customer_name as string) ?? undefined,
+      hasReview:      (row.has_review as boolean) ?? false,
     });
   }
 }

@@ -12,6 +12,7 @@ interface FreelancerDashboardProps {
   user: { id?: string; name: string; email: string };
   onLogout: () => void;
   onSwitchToClient: () => void;
+  onViewTransactions: () => void;
 }
 
 // ── Stat Card ─────────────────────────────────────────────────
@@ -471,10 +472,11 @@ const EditListingModal = ({
 };
 
 // ── Main Dashboard ────────────────────────────────────────────
-export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: FreelancerDashboardProps) => {
+export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTransactions }: FreelancerDashboardProps) => {
   const [listings, setListings] = useState<ServiceListing[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [completedCount, setCompletedCount] = useState<number | string>("—");
   const [showNewListing, setShowNewListing] = useState(false);
   const [activeTab, setActiveTab] = useState<'listings' | 'offers'>('listings');
   const [listingToDelete, setListingToDelete] = useState<ServiceListing | null>(null);
@@ -491,7 +493,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
     if (!freelancerId) return;
     setLoading(true);
     try {
-      const [{ data: listingRows }, { data: offerRows }] = await Promise.all([
+      const [{ data: listingRows }, { data: offerRows }, { count }] = await Promise.all([
         supabase
           .from('listings')
           .select('*, pricing_models(*)')
@@ -503,6 +505,11 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
           .eq('freelancer_id', freelancerId)
           .eq('status', 'pending')
           .order('created_at', { ascending: false }),
+        supabase
+          .from('transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('freelancer_id', freelancerId)
+          .not('completed_at', 'is', null),
       ]);
 
       const rawMap: Record<string, PricingModelRow[]> = {};
@@ -517,6 +524,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
         ServiceListing.fromRow(r, r.pricing_models?.[0] ?? null)
       ));
       setOffers((offerRows ?? []).map(r => Offer.fromRow(r)));
+      if (count !== null) setCompletedCount(count);
     } finally {
       setLoading(false);
     }
@@ -625,6 +633,12 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
           </div>
           <div className="flex items-center gap-3 mb-2">
             <button
+              onClick={onViewTransactions}
+              className="px-5 py-2 bg-white text-black border-2 border-transparent font-display uppercase text-sm shadow-brutal-sm hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+            >
+              Transactions
+            </button>
+            <button
               onClick={onSwitchToClient}
               className="px-5 py-2 border-2 border-white/30 font-display uppercase text-sm hover:bg-white/10 transition-colors"
             >
@@ -647,7 +661,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
           <StatCard icon={Briefcase}    label="Total Listings"  value={listings.length} />
           <StatCard icon={ToggleRight}  label="Active"          value={activeListings} accent />
           <StatCard icon={Clock}        label="Pending Offers"  value={pendingOffers} />
-          <StatCard icon={TrendingUp}   label="Completed"       value="—" />
+          <StatCard icon={TrendingUp}   label="Completed"       value={completedCount} />
         </div>
 
         {/* Tab switcher */}
