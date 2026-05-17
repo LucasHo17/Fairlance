@@ -264,8 +264,27 @@ export class ReviewRepository {
   async getByFreelancer(freelancerId: string): Promise<Review[]> {
     const { data, error } = await supabase
       .from('reviews')
-      .select('*')
+      .select(`
+        *,
+        customer:users!reviews_customer_id_fkey(id, full_name, business_name),
+        review_responses(*)
+      `)
       .eq('freelancer_id', freelancerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(Review.fromRow);
+  }
+
+  async getByListing(listingId: string): Promise<Review[]> {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        customer:users!reviews_customer_id_fkey(id, full_name, business_name),
+        review_responses(*),
+        transactions!inner(listing_id)
+      `)
+      .eq('transactions.listing_id', listingId)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(Review.fromRow);

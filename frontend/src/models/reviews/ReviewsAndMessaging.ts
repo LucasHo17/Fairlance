@@ -18,6 +18,9 @@ export class Review {
   body: string;
   createdAt: string;
 
+  customerName?: string;
+  response?: ReviewResponse;
+
   constructor(data: {
     id: string;
     transactionId: string;
@@ -26,6 +29,8 @@ export class Review {
     ratings: RatingMap;
     body: string;
     createdAt: string;
+    customerName?: string;
+    response?: ReviewResponse;
   }) {
     this.id            = data.id;
     this.transactionId = data.transactionId;
@@ -34,6 +39,8 @@ export class Review {
     this.ratings       = data.ratings;
     this.body          = data.body;
     this.createdAt     = data.createdAt;
+    this.customerName  = data.customerName;
+    this.response      = data.response;
   }
 
   // Validates that all rating values are 1–5 and body is non-empty.
@@ -54,6 +61,15 @@ export class Review {
   }
 
   static fromRow(row: Record<string, unknown>): Review {
+    let responseObj = undefined;
+    if (row.review_responses && Array.isArray(row.review_responses) && row.review_responses.length > 0) {
+      responseObj = ReviewResponse.fromRow(row.review_responses[0]);
+    } else if (row.review_responses && !Array.isArray(row.review_responses)) {
+      responseObj = ReviewResponse.fromRow(row.review_responses as any);
+    }
+
+    const customer = row.customer as any;
+
     return new Review({
       id:            row.id as string,
       transactionId: row.transaction_id as string,
@@ -62,6 +78,8 @@ export class Review {
       ratings:       row.ratings as RatingMap,
       body:          row.body as string,
       createdAt:     row.created_at as string,
+      customerName:  customer ? (customer.full_name || customer.business_name) : undefined,
+      response:      responseObj,
     });
   }
 }
