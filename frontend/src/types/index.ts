@@ -2,7 +2,8 @@
 
 export interface Listing {
   id: string | number;
-  name: string;
+  name: string; // The title of the listing/service
+  freelancerName?: string; // The actual name of the freelancer
   role: string;
   category: string;
   price: number;
@@ -12,6 +13,7 @@ export interface Listing {
   tags: string[];
   color: string;
   completedJobs: number;
+  freelancerUserId?: string; // actual user id of the freelancer (for chat)
 }
 
 // ── Extended freelancer profile ──────────────────────────────────────────────

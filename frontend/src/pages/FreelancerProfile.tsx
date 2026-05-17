@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Star, MapPin, Clock, Briefcase, BarChart2, CheckCircle, Eye, Trash2 } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Clock, Briefcase, BarChart2, CheckCircle, Eye, Trash2, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { getPricingReport } from '../data/mockData';
@@ -64,8 +64,9 @@ export const FreelancerProfile = () => {
         const colors = ['bg-vibrant-coral', 'bg-rosy-copper', 'bg-white'];
         const mappedListing: Listing = {
           id: item.id,
-          name: item.users?.business_name || item.title || 'Unknown Talent',
-          role: item.title || item.categories?.name || 'Freelancer',
+          name: item.title || item.categories?.name || 'Untitled Service',
+          freelancerName: item.users?.full_name || item.users?.business_name || 'Unknown Talent',
+          role: item.categories?.name || 'Freelancer',
           category: item.categories?.name || item.category_id || 'general',
           price: item.pricing_models?.[0]?.base_price || 0,
           rating: ratingData?.avg_overall ?? 0,
@@ -74,6 +75,7 @@ export const FreelancerProfile = () => {
           tags: item.categories?.name ? [item.categories.name] : [],
           color: colors[Math.floor(Math.random() * colors.length)],
           completedJobs: 0,
+          freelancerUserId: freelancerId,
         };
 
         const pricingModels: PricingModel[] = (item.pricing_models ?? []).map((model: any) => ({
@@ -224,12 +226,17 @@ export const FreelancerProfile = () => {
                 "w-24 h-24 border-4 border-black shadow-brutal flex items-center justify-center text-4xl font-display shrink-0",
                 listing.color
               )}>
-                {listing.name.charAt(0)}
+                {(listing.freelancerName || listing.name).charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
                 <h1 className="text-5xl font-display uppercase tracking-tighter leading-none mb-2">
                   {listing.name}
                 </h1>
+                {listing.freelancerName && (
+                  <p className="font-mono text-sm uppercase mb-1">
+                    Offered by <span className="font-bold">{listing.freelancerName}</span>
+                  </p>
+                )}
                 <p className="font-mono text-sm uppercase opacity-70 mb-4">{listing.role}</p>
                 <div className="flex flex-wrap items-center gap-4 text-xs font-mono uppercase">
                   <div className="flex items-center gap-1">
@@ -310,18 +317,25 @@ export const FreelancerProfile = () => {
               </div>
             )}
 
-            {/* Make an Offer CTA */}
+            {/* Make an Offer + Message CTA */}
             {user instanceof CustomerUser && (
-              <div className="border-4 border-black bg-white shadow-brutal p-6">
+              <div className="border-4 border-black bg-white shadow-brutal p-6 space-y-3">
                 <h2 className="font-display text-2xl uppercase tracking-tighter mb-2">Ready to work?</h2>
-                <p className="font-mono text-xs opacity-70 mb-6 leading-relaxed">
-                  Propose a custom rate and scope. The freelancer can then accept, decline, or counter.
+                <p className="font-mono text-xs opacity-70 mb-4 leading-relaxed">
+                  Propose a custom rate and scope, or message the freelancer first with questions.
                 </p>
                 <button
                   onClick={() => setOfferOpen(true)}
                   className="w-full py-4 bg-vibrant-coral text-white font-display uppercase text-lg border-2 border-black hover:translate-y-1 hover:shadow-none transition-all shadow-brutal-sm"
                 >
                   Make an Offer
+                </button>
+                <button
+                  id="message-freelancer-btn"
+                  onClick={() => navigate(`/messages?with=${listing.freelancerUserId ?? id}`)}
+                  className="w-full py-3 bg-white border-2 border-black font-display uppercase text-sm flex items-center justify-center gap-2 shadow-brutal-sm hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+                >
+                  <MessageSquare size={14} /> Message
                 </button>
               </div>
             )}
