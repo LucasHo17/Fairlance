@@ -32,13 +32,14 @@ export function ChatPage({ user }: ChatPageProps) {
   const targetFreelancerId = searchParams.get('with');
 
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [draftTarget, setDraftTarget] = useState<ConversationWithParticipant | null>(null);
   const [draft, setDraft] = useState('');
   const [initiating, setInitiating] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { conversations, loading: convsLoading, refetch } = useConversationList(user?.id);
-  const { messages, loading: msgsLoading, sending, sendMessage } = useChat(activeConversationId, user?.id);
+  const { messages, loading: msgsLoading, sending, sendMessage } = useChat(activeConversationId === 'draft' ? null : activeConversationId, user?.id);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -55,30 +56,65 @@ export function ChatPage({ user }: ChatPageProps) {
 
     if (existing) {
       setActiveConversationId(existing.id);
+      setDraftTarget(null);
     } else {
-      // Create a new conversation
       setInitiating(true);
-      const customerId = user.role === 'customer' ? user.id : targetFreelancerId;
-      const freelancerId = user.role === 'customer' ? targetFreelancerId : user.id;
-
-      Conversation.getOrCreate(customerId, freelancerId)
-        .then((conv) => {
-          setActiveConversationId(conv.id);
-          refetch();
+      supabase.from('users').select('full_name, business_name, email').eq('id', targetFreelancerId).single()
+        .then(({ data }) => {
+          if (data) {
+            const name = data.full_name || data.business_name || data.email?.split('@')[0] || 'User';
+            setDraftTarget({
+              id: 'draft',
+              customerId: user.role === 'customer' ? user.id : targetFreelancerId,
+              freelancerId: user.role === 'customer' ? targetFreelancerId : user.id,
+              createdAt: new Date().toISOString(),
+              otherUserId: targetFreelancerId,
+              otherUserName: name,
+              otherUserInitial: name.charAt(0).toUpperCase(),
+              unreadCount: 0,
+            });
+            setActiveConversationId('draft');
+          }
         })
-        .catch(console.error)
         .finally(() => setInitiating(false));
     }
-  }, [targetFreelancerId, user?.id, user?.role, convsLoading, conversations, refetch]);
+  }, [targetFreelancerId, user?.id, user?.role, convsLoading, conversations]);
 
-  const activeConversation = conversations.find((c) => c.id === activeConversationId);
+  const displayedConversations = draftTarget 
+    ? [draftTarget, ...conversations.filter(c => c.otherUserId !== draftTarget.otherUserId)]
+    : conversations;
+
+  const activeConversation = displayedConversations.find((c) => c.id === activeConversationId);
+
+  const [localSending, setLocalSending] = useState(false);
+  const isCurrentlySending = sending || localSending;
 
   const handleSend = async () => {
-    if (!draft.trim() || sending) return;
+    if (!draft.trim() || isCurrentlySending) return;
     const text = draft;
     setDraft('');
-    await sendMessage(text);
-    refetch(); // refresh last message preview in sidebar
+
+    if (activeConversationId === 'draft' && draftTarget) {
+      setLocalSending(true);
+      try {
+        const conv = await Conversation.getOrCreate(draftTarget.customerId, draftTarget.freelancerId);
+        await supabase.from('messages').insert({
+          conversation_id: conv.id,
+          sender_id: user?.id,
+          body: text.trim(),
+        });
+        setActiveConversationId(conv.id);
+        setDraftTarget(null);
+        refetch();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLocalSending(false);
+      }
+    } else {
+      await sendMessage(text);
+      refetch(); // refresh last message preview in sidebar
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -114,7 +150,7 @@ export function ChatPage({ user }: ChatPageProps) {
               <div className="flex items-center justify-center h-full">
                 <Loader2 size={20} className="animate-spin opacity-40" />
               </div>
-            ) : conversations.length === 0 ? (
+            ) : displayedConversations.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
                 <MessageSquare size={32} className="opacity-20" />
                 <p className="font-mono text-xs uppercase opacity-40 leading-relaxed">
@@ -122,7 +158,7 @@ export function ChatPage({ user }: ChatPageProps) {
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => (
+              displayedConversations.map((conv) => (
                 <ConversationRow
                   key={conv.id}
                   conv={conv}
@@ -220,15 +256,15 @@ export function ChatPage({ user }: ChatPageProps) {
                   <button
                     id="chat-send-btn"
                     onClick={handleSend}
-                    disabled={!draft.trim() || sending}
+                    disabled={!draft.trim() || isCurrentlySending}
                     className={cn(
                       'p-4 border-2 border-black font-display uppercase text-sm shadow-brutal-sm transition-all flex items-center gap-2',
-                      draft.trim() && !sending
+                      draft.trim() && !isCurrentlySending
                         ? 'bg-vibrant-coral text-white hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none'
                         : 'bg-bone text-shadow-grey opacity-40 cursor-not-allowed'
                     )}
                   >
-                    {sending ? (
+                    {isCurrentlySending ? (
                       <Loader2 size={16} className="animate-spin" />
                     ) : (
                       <Send size={16} />
