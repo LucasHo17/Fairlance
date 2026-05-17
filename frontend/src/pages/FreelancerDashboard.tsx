@@ -522,7 +522,52 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient }: Freela
     }
   };
 
-  useEffect(() => { fetchData(); }, [freelancerId]);
+  useEffect(() => {
+    fetchData();
+
+    if (!freelancerId) return;
+
+    const channel = supabase
+      .channel(`offers-${freelancerId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'offers',
+          filter: `freelancer_id=eq.${freelancerId}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newOffer = Offer.fromRow(payload.new);
+            if (newOffer.status === 'pending') {
+              setOffers((prev) => [newOffer, ...prev]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedOffer = Offer.fromRow(payload.new);
+            setOffers((prev) => {
+              if (updatedOffer.status === 'pending') {
+                const exists = prev.find((o) => o.id === updatedOffer.id);
+                if (exists) {
+                  return prev.map((o) => (o.id === updatedOffer.id ? updatedOffer : o));
+                } else {
+                  return [updatedOffer, ...prev];
+                }
+              } else {
+                return prev.filter((o) => o.id !== updatedOffer.id);
+              }
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setOffers((prev) => prev.filter((o) => o.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [freelancerId]);
 
   const handleDeleteConfirm = async () => {
     if (!listingToDelete) return;
