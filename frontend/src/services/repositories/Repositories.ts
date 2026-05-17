@@ -214,7 +214,8 @@ export class TransactionRepository {
         *,
         listing:listings(title),
         freelancer:users!transactions_freelancer_id_fkey(id, business_name, role),
-        customer:users!transactions_customer_id_fkey(id, business_name, role)
+        customer:users!transactions_customer_id_fkey(id, business_name, role),
+        reviews(id)
       `)
       .or(`customer_id.eq.${userId},freelancer_id.eq.${userId}`)
       .order('completed_at', { ascending: false, nullsFirst: true });
@@ -224,6 +225,7 @@ export class TransactionRepository {
       listing_title:   row.listing?.title ?? null,
       freelancer_name: row.freelancer?.business_name ?? null,
       customer_name:   row.customer?.business_name ?? null,
+      has_review:      Array.isArray(row.reviews) ? row.reviews.length > 0 : !!row.reviews,
     }));
   }
 
@@ -262,8 +264,27 @@ export class ReviewRepository {
   async getByFreelancer(freelancerId: string): Promise<Review[]> {
     const { data, error } = await supabase
       .from('reviews')
-      .select('*')
+      .select(`
+        *,
+        customer:users!reviews_customer_id_fkey(id, full_name, business_name),
+        review_responses(*)
+      `)
       .eq('freelancer_id', freelancerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(Review.fromRow);
+  }
+
+  async getByListing(listingId: string): Promise<Review[]> {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        customer:users!reviews_customer_id_fkey(id, full_name, business_name),
+        review_responses(*),
+        transactions!inner(listing_id)
+      `)
+      .eq('transactions.listing_id', listingId)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data ?? []).map(Review.fromRow);

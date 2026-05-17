@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Transaction } from '../models/marketplace/Marketplace';
 import { TransactionRepository } from '../services/repositories/Repositories';
+import { CustomerUser } from '../models/users/UserSubclasses';
 import { cn } from '../lib/utils';
 
 interface TransactionsPageProps {
@@ -35,15 +36,135 @@ const StatusBadge = ({ complete }: { complete: boolean }) => (
   </span>
 );
 
+// ── Review Modal ──────────────────────────────────────────────
+const ReviewModal = ({ tx, userId, onClose, onSubmit }: {
+  tx: Transaction;
+  userId: string;
+  onClose: () => void;
+  onSubmit: () => void;
+}) => {
+  const [communication, setCommunication] = useState(0);
+  const [quality, setQuality] = useState(0);
+  const [speed, setSpeed] = useState(0);
+  const [body, setBody] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const StarInput = ({ label, value, onChange }: any) => (
+    <div className="flex items-center justify-between">
+      <label className="font-mono text-[10px] uppercase tracking-widest">{label}</label>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map(star => (
+          <button
+            key={star}
+            type="button"
+            onClick={() => onChange(star)}
+            className={cn("hover:text-vibrant-coral transition-colors", star <= value ? "text-vibrant-coral" : "text-black/20")}
+          >
+            <Star size={20} className={star <= value ? "fill-current" : ""} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!communication || !quality || !speed) {
+      setError('Please provide all ratings.');
+      return;
+    }
+    if (!body.trim()) {
+      setError('Please write a review text.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const customer = new CustomerUser({ id: userId, role: 'customer' } as any);
+      await customer.writeReview({
+        transactionId: tx.id,
+        ratings: { communication, quality, speed },
+        body: body.trim()
+      });
+      onSubmit();
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to submit review');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.form
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="bg-bone border-4 border-black shadow-brutal w-full max-w-md p-8 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+        onSubmit={handleSubmit}
+      >
+        <div className="font-mono text-[10px] uppercase tracking-widest opacity-60 mb-1">Leave a Review</div>
+        <h2 className="font-display uppercase text-2xl tracking-tighter mb-6 truncate">{tx.listingTitle}</h2>
+
+        <div className="space-y-6">
+          <div className="space-y-3 border-2 border-black bg-white p-4">
+            <StarInput label="Communication" value={communication} onChange={setCommunication} />
+            <StarInput label="Quality of Work" value={quality} onChange={setQuality} />
+            <StarInput label="Speed & Delivery" value={speed} onChange={setSpeed} />
+          </div>
+          
+          <div>
+            <label className="font-display uppercase text-[10px] tracking-widest block mb-1">Written Review</label>
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              rows={4}
+              placeholder="Share your experience working with this freelancer..."
+              className="w-full border-2 border-black bg-white px-4 py-3 font-mono text-sm focus:outline-none focus:border-vibrant-coral resize-none"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="mt-4 font-mono text-xs text-vibrant-coral border-2 border-vibrant-coral px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-6">
+          <button type="button" onClick={onClose}
+            className="flex-1 py-3 border-2 border-black font-display uppercase text-sm hover:bg-black hover:text-white transition-colors">
+            Cancel
+          </button>
+          <button type="submit" disabled={loading}
+            className="flex-1 py-3 bg-shadow-grey text-white border-2 border-black font-display uppercase text-sm shadow-brutal-sm hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-50">
+            {loading ? 'Submitting...' : 'Submit Review'}
+          </button>
+        </div>
+      </motion.form>
+    </motion.div>
+  );
+};
+
 // ── Transaction Card ──────────────────────────────────────────
 const TransactionCard = ({
   tx,
   userId,
   onMarkComplete,
+  onLeaveReview,
 }: {
   tx: Transaction;
   userId: string;
   onMarkComplete: (tx: Transaction) => Promise<void>;
+  onLeaveReview: (tx: Transaction) => void;
 }) => {
   const [marking, setMarking] = useState(false);
   const [error, setError] = useState('');
@@ -126,10 +247,20 @@ const TransactionCard = ({
             </button>
           )}
 
-          {tx.isComplete && isCustomer && (
+          {tx.isComplete && isCustomer && !tx.hasReview && (
+            <button
+              onClick={() => onLeaveReview(tx)}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-black border-2 border-black font-display uppercase text-sm shadow-brutal-sm hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+            >
+              <Star size={14} className="fill-current" />
+              Leave a Review
+            </button>
+          )}
+
+          {tx.isComplete && isCustomer && tx.hasReview && (
             <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase opacity-50">
-              <Star size={10} />
-              Review eligible
+              <Star size={10} className="fill-current text-vibrant-coral" />
+              Reviewed
             </div>
           )}
         </div>
@@ -153,6 +284,7 @@ export const TransactionsPage = ({ user, onBack }: TransactionsPageProps) => {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
   const [filter, setFilter] = useState<TabFilter>('all');
+  const [reviewingTx, setReviewingTx] = useState<Transaction | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     if (!user.id) return;
@@ -176,6 +308,15 @@ export const TransactionsPage = ({ user, onBack }: TransactionsPageProps) => {
     setTransactions(prev =>
       prev.map(t => t.id === tx.id ? tx : t)
     );
+  };
+
+  const handleReviewSubmit = () => {
+    if (reviewingTx) {
+      setTransactions(prev =>
+        prev.map(t => t.id === reviewingTx.id ? Object.assign(Object.create(Object.getPrototypeOf(t)), t, { hasReview: true }) : t)
+      );
+    }
+    setReviewingTx(null);
   };
 
   const filtered = transactions.filter(tx => {
@@ -301,12 +442,24 @@ export const TransactionsPage = ({ user, onBack }: TransactionsPageProps) => {
                   tx={tx}
                   userId={user.id}
                   onMarkComplete={handleMarkComplete}
+                  onLeaveReview={setReviewingTx}
                 />
               ))}
             </motion.div>
           </AnimatePresence>
         )}
       </div>
+
+      <AnimatePresence>
+        {reviewingTx && (
+          <ReviewModal
+            tx={reviewingTx}
+            userId={user.id}
+            onClose={() => setReviewingTx(null)}
+            onSubmit={handleReviewSubmit}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 };

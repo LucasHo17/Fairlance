@@ -12,6 +12,8 @@ import { CustomerUser } from '../models/users/UserSubclasses';
 import { supabase } from '../lib/supabaseClient';
 import type { Listing, PricingModel, PricingReport } from '../types';
 import { AnimatePresence } from 'motion/react';
+import { ReviewRepository } from '../services/repositories/Repositories';
+import { Review, ReviewResponse } from '../models/reviews/ReviewsAndMessaging';
 
 interface ProfileDetails {
   bio: string;
@@ -20,6 +22,101 @@ interface ProfileDetails {
   memberSince: string;
   portfolioItems: Array<{ emoji: string; title: string; description: string }>;
 }
+
+const ReviewList = ({ reviews, freelancerId, isOwner, onReplyAdded }: any) => {
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleReplySubmit = async (reviewId: string) => {
+    if (!replyBody.trim()) return;
+    setSubmitting(true);
+    try {
+      const repo = new ReviewRepository();
+      const response = await repo.createResponse({
+        reviewId,
+        freelancerId,
+        body: replyBody.trim(),
+      });
+      onReplyAdded(reviewId, response);
+      setReplyingTo(null);
+      setReplyBody('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (reviews.length === 0) {
+    return <div className="font-mono text-xs opacity-60">No reviews yet.</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {reviews.map((r: any) => (
+        <div key={r.id} className="border-4 border-black p-5 bg-white shadow-brutal-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-display uppercase text-sm">{r.customerName || 'Customer'}</div>
+            <div className="font-mono text-[10px] uppercase opacity-50">
+              {new Date(r.createdAt).toLocaleDateString()}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4 mb-4">
+            {Object.entries(r.ratings).map(([key, value]: any) => (
+              <div key={key} className="flex items-center gap-1 font-mono text-[10px] uppercase">
+                <span className="opacity-60">{key}:</span>
+                <span className="font-bold flex items-center gap-0.5">
+                  {value} <Star size={10} className="fill-current text-vibrant-coral" />
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <p className="font-mono text-sm leading-relaxed mb-4">{r.body}</p>
+
+          {r.response ? (
+            <div className="ml-6 pl-4 border-l-4 border-black/20 mt-4">
+              <div className="font-display uppercase text-xs mb-1 opacity-70">Your Reply</div>
+              <p className="font-mono text-xs opacity-80">{r.response.body}</p>
+            </div>
+          ) : isOwner ? (
+            replyingTo === r.id ? (
+              <div className="mt-4 border-2 border-black p-4 bg-bone">
+                <textarea
+                  maxLength={500}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder="Write your reply..."
+                  className="w-full bg-white border-2 border-black p-3 font-mono text-sm focus:outline-none focus:border-vibrant-coral resize-none"
+                  rows={3}
+                />
+                <div className="flex items-center justify-between mt-2">
+                  <span className={cn("font-mono text-[10px]", replyBody.length >= 500 ? "text-vibrant-coral" : "opacity-50")}>
+                    {replyBody.length} / 500
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setReplyingTo(null)} disabled={submitting} className="px-3 py-1 font-display uppercase text-xs hover:bg-black/5 transition-colors">
+                      Cancel
+                    </button>
+                    <button onClick={() => handleReplySubmit(r.id)} disabled={submitting} className="px-3 py-1 bg-black text-white font-display uppercase text-xs hover:bg-black/80 transition-colors">
+                      {submitting ? 'Sending...' : 'Reply'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => { setReplyingTo(r.id); setReplyBody(''); }} className="font-display uppercase text-xs border-b-2 border-black hover:text-vibrant-coral hover:border-vibrant-coral transition-colors">
+                Reply to Review
+              </button>
+            )
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export const FreelancerProfile = () => {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +131,7 @@ export const FreelancerProfile = () => {
   const [listing, setListing] = useState<Listing | null>(null);
   const [profile, setProfile] = useState<ProfileDetails | null>(null);
   const [report, setReport] = useState<PricingReport | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,6 +158,10 @@ export const FreelancerProfile = () => {
           .select('avg_overall, review_count')
           .eq('freelancer_id', freelancerId)
           .single();
+
+        const repo = new ReviewRepository();
+        const profileReviews = await repo.getByListing(id);
+        setReviews(profileReviews);
 
         const colors = ['bg-vibrant-coral', 'bg-rosy-copper', 'bg-white'];
         const mappedListing: Listing = {
@@ -295,6 +397,19 @@ export const FreelancerProfile = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Reviews */}
+            <div>
+              <h2 className="font-mono text-[10px] uppercase tracking-widest mb-4 opacity-60">Client Reviews</h2>
+              <ReviewList 
+                reviews={reviews} 
+                freelancerId={listing.freelancerUserId} 
+                isOwner={user?.id === listing.freelancerUserId} 
+                onReplyAdded={(reviewId: string, response: ReviewResponse) => {
+                  setReviews(prev => prev.map(r => r.id === reviewId ? Object.assign(Object.create(Object.getPrototypeOf(r)), r, { response }) : r));
+                }} 
+              />
             </div>
           </div>
 
