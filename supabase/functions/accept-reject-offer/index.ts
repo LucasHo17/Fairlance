@@ -93,6 +93,18 @@ Deno.serve(async (req: Request) => {
     transaction = tx;
   }
 
+  // Send notification
+  const event_type = action === "accept" ? "offer_accepted" : "offer_rejected";
+  const target_user_id = role === "freelancer" ? offer.customer_id : offer.freelancer_id;
+  
+  await serviceClient.functions.invoke("notify", {
+    body: {
+      user_id: target_user_id,
+      event_type: event_type,
+      payload: { offer_id }
+    }
+  });
+
   return new Response(
     JSON.stringify({ success: true, status: newStatus, transaction }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },

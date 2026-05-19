@@ -1,4 +1,5 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { createUserClient, corsHeaders } from "../_shared/supabase.ts";
 
 // Simple profanity list — expand as needed.
@@ -65,7 +66,7 @@ Deno.serve(async (req: Request) => {
   // Confirm the transaction is completed and belongs to this customer.
   const { data: tx, error: txError } = await supabase
     .from("transactions")
-    .select("id, completed_at")
+    .select("id, completed_at, offer_id")
     .eq("id", transaction_id)
     .single();
 
@@ -96,6 +97,29 @@ Deno.serve(async (req: Request) => {
     }
     return new Response(JSON.stringify({ error: reviewError.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Send notification to the freelancer
+  const serviceClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  // We need to fetch the freelancer_id to send the notification
+  const { data: offerData } = await serviceClient
+    .from("offers")
+    .select("freelancer_id")
+    .eq("id", tx.offer_id)
+    .single();
+
+  if (offerData?.freelancer_id) {
+    await serviceClient.functions.invoke("notify", {
+      body: {
+        user_id: offerData.freelancer_id,
+        event_type: "review_posted",
+        payload: { transaction_id, review_id: review.id }
+      }
     });
   }
 

@@ -169,29 +169,46 @@ export class MarketComparatorFacade {
 // once notification Edge Functions are implemented.
 
 export const NotificationService = {
-  async notifyOfferReceived(offerId: string) {
+  async notifyOfferReceived(offerId: string, targetUserId?: string) {
     console.info('[NotificationService] offer received:', offerId);
-    // await supabase.functions.invoke('notify', { body: { event: 'offer_received', offer_id: offerId } });
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'offer_received', payload: { offer_id: offerId } } });
+    }
   },
 
-  async notifyOfferAccepted(offerId: string) {
+  async notifyOfferAccepted(offerId: string, targetUserId?: string) {
     console.info('[NotificationService] offer accepted:', offerId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'offer_accepted', payload: { offer_id: offerId } } });
+    }
   },
 
-  async notifyOfferRejected(offerId: string) {
+  async notifyOfferRejected(offerId: string, targetUserId?: string) {
     console.info('[NotificationService] offer rejected:', offerId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'offer_rejected', payload: { offer_id: offerId } } });
+    }
   },
 
-  async notifyNewMessage(messageId: string) {
+  async notifyNewMessage(messageId: string, targetUserId?: string) {
     console.info('[NotificationService] new message:', messageId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'new_message', payload: { message_id: messageId } } });
+    }
   },
 
-  async notifyReviewPosted(reviewId: string) {
+  async notifyReviewPosted(reviewId: string, targetUserId?: string) {
     console.info('[NotificationService] review posted:', reviewId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'review_posted', payload: { review_id: reviewId } } });
+    }
   },
 
-  async notifyOfferExpiring(offerId: string) {
+  async notifyOfferExpiring(offerId: string, targetUserId?: string) {
     console.info('[NotificationService] offer expiring:', offerId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'offer_expiring', payload: { offer_id: offerId } } });
+    }
   },
 };
 
