@@ -72,6 +72,8 @@ export function useNotifications(userId: string | undefined) {
       supabase.removeChannel(channelRef.current);
     }
 
+    let isInitialSub = true;
+
     const channel = supabase
       .channel(`notifications:${userId}`)
       .on(
@@ -108,7 +110,16 @@ export function useNotifications(userId: string | undefined) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (!isInitialSub) {
+            // Reconnected! Re-fetch notifications to catch up on any missed updates during downtime
+            fetchNotifications();
+          } else {
+            isInitialSub = false;
+          }
+        }
+      });
 
     channelRef.current = channel;
 
