@@ -1,7 +1,7 @@
 import { useState, useEffect, type ElementType, type FormEvent } from 'react';
 import { Plus, ToggleLeft, ToggleRight, CheckCircle, XCircle, Clock, DollarSign, Briefcase, TrendingUp, Eye, Trash2, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { ServiceListing, Offer } from '../models/marketplace/Marketplace';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -473,12 +473,15 @@ const EditListingModal = ({
 
 // ── Main Dashboard ────────────────────────────────────────────
 export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTransactions }: FreelancerDashboardProps) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'offers' ? 'offers' : 'listings';
+
   const [listings, setListings] = useState<ServiceListing[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [completedCount, setCompletedCount] = useState<number | string>("—");
   const [showNewListing, setShowNewListing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'listings' | 'offers'>('listings');
+  const [activeTab, setActiveTab] = useState<'listings' | 'offers'>(initialTab);
   const [listingToDelete, setListingToDelete] = useState<ServiceListing | null>(null);
   const [listingToEdit, setListingToEdit] = useState<ServiceListing | null>(null);
   const [pricingModelsMap, setPricingModelsMap] = useState<Record<string, PricingModelRow[]>>({});
@@ -486,6 +489,13 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
 
   const navigate = useNavigate();
   const freelancerId = user.id ?? '';
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'offers' || tab === 'listings') {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   const handleViewListing = (l: ServiceListing) => navigate(`/freelancer/${l.id}?preview=true`);
 
@@ -669,7 +679,14 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
           {(['listings', 'offers'] as const).map(tab => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab);
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev);
+                  next.set('tab', tab);
+                  return next;
+                });
+              }}
               className={cn(
                 'px-6 py-2 font-display uppercase text-sm tracking-tight transition-colors',
                 activeTab === tab

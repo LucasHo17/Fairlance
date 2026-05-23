@@ -4,6 +4,7 @@ import { FreelancerUser, CustomerUser } from '../../models/users/UserSubclasses'
 import { ServiceListing } from '../../models/marketplace/Marketplace';
 import { Offer, Transaction } from '../../models/marketplace/Marketplace';
 import { Review, ReviewResponse } from '../../models/reviews/ReviewsAndMessaging';
+import { Notification } from '../../models/notifications/Notification';
 
 // ── UserRepository ───────────────────────────────────────────
 
@@ -316,5 +317,37 @@ export class ReviewRepository {
       .single();
     if (error) throw error;
     return ReviewResponse.fromRow(data);
+  }
+}
+
+// ── NotificationRepository ────────────────────────────────────
+
+export class NotificationRepository {
+  async getByUser(userId: string, limit = 50): Promise<Notification[]> {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []).map(Notification.fromRow);
+  }
+
+  async markAsRead(notificationId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+    if (error) throw error;
+  }
+
+  async markAllAsRead(userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+    if (error) throw error;
   }
 }

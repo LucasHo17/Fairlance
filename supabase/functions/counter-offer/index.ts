@@ -1,4 +1,5 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { createUserClient, corsHeaders } from "../_shared/supabase.ts";
 
 Deno.serve(async (req: Request) => {
@@ -76,6 +77,21 @@ Deno.serve(async (req: Request) => {
   if (updateError) {
     return new Response(JSON.stringify({ error: "Update Error", details: updateError }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
+
+  // Send notification to the other party
+  const serviceClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+  const target_user_id = role === 'freelancer' ? offer.customer_id : offer.freelancer_id;
+
+  await serviceClient.functions.invoke("notify", {
+    body: {
+      user_id: target_user_id,
+      event_type: "offer_received",
+      payload: { offer_id }
+    }
+  });
 
   return new Response(
     JSON.stringify({ success: true, amount, proposed_by: role }),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Conversation, Message } from '../models/reviews/ReviewsAndMessaging';
+import { NotificationService } from '../services/repositories/CoreServices';
 
 export interface ConversationWithParticipant extends Conversation {
   otherUserId: string;
@@ -162,12 +163,33 @@ export function useChat(conversationId: string | null, currentUserId: string | u
       setSending(true);
       setError(null);
       try {
-        const { error: insertError } = await supabase.from('messages').insert({
-          conversation_id: conversationId,
-          sender_id: currentUserId,
-          body: body.trim(),
-        });
+        const { data: insertedMsg, error: insertError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_id: currentUserId,
+            body: body.trim(),
+          })
+          .select()
+          .single();
+
         if (insertError) throw insertError;
+
+        // Fetch conversation participants to identify who the other participant is
+        const { data: conv, error: convError } = await supabase
+          .from('conversations')
+          .select('customer_id, freelancer_id')
+          .eq('id', conversationId)
+          .single();
+
+        if (!convError && conv && insertedMsg?.id) {
+          const otherUserId = conv.customer_id === currentUserId ? conv.freelancer_id : conv.customer_id;
+          try {
+            await NotificationService.notifyNewMessage(insertedMsg.id, otherUserId);
+          } catch (notifyErr) {
+            console.error('Failed to dispatch message notification:', notifyErr);
+          }
+        }
       } catch (err: any) {
         setError(err.message ?? 'Failed to send message');
       } finally {
