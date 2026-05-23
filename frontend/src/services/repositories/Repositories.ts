@@ -323,12 +323,13 @@ export class ReviewRepository {
 // ── NotificationRepository ────────────────────────────────────
 
 export class NotificationRepository {
-  async getByUser(userId: string): Promise<Notification[]> {
+  async getByUser(userId: string, limit = 50): Promise<Notification[]> {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(limit);
     if (error) throw error;
     return (data ?? []).map(Notification.fromRow);
   }
