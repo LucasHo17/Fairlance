@@ -1,5 +1,6 @@
 import { BaseUser, type BaseUserData } from './BaseUser';
 import { supabase } from '../../lib/supabaseClient';
+import { NotificationService } from '../../services/repositories/CoreServices';
 
 // ── FreelancerUser ───────────────────────────────────────────
 
@@ -114,6 +115,16 @@ export class CustomerUser extends BaseUser {
       .select()
       .single();
     if (error) throw error;
+
+    // Send real-time notification to the freelancer
+    if (data?.id && data?.freelancer_id) {
+      try {
+        await NotificationService.notifyOfferReceived(data.id, data.freelancer_id);
+      } catch (notifyErr) {
+        console.error('Failed to dispatch new offer notification:', notifyErr);
+      }
+    }
+
     return data;
   }
 

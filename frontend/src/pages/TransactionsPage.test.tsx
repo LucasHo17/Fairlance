@@ -277,11 +277,11 @@ describe('TransactionsPage', () => {
     expect(screen.queryByText('Mark Complete')).not.toBeInTheDocument();
   });
 
-  it('shows review eligible hint for completed transactions (customer view)', async () => {
+  it('shows Leave a Review button for completed transactions (customer view)', async () => {
     mockTransactions([makeTx({ completed_at: '2026-05-11T00:00:00Z' })]);
     renderPage(); // user is cust-1 (the customer)
     await waitFor(() => {
-      expect(screen.getByText(/Review eligible/i)).toBeInTheDocument();
+      expect(screen.getByText(/Leave a Review/i)).toBeInTheDocument();
     });
   });
 
