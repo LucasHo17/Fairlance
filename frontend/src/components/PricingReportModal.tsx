@@ -153,6 +153,42 @@ export const PricingReportModal = ({ report, listing, onClose }: PricingReportMo
               </div>
             </section>
 
+            {/* ── AI Pricing Advisor (PricePredictor ML model) ── */}
+            {report.prediction && report.prediction.suggestedPrice > 0 && (
+              <section className="bg-shadow-grey text-white p-6 border-4 border-black shadow-brutal-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-full bg-vibrant-coral flex items-center justify-center font-display text-sm text-white border-2 border-black">
+                    AI
+                  </div>
+                  <div>
+                    <h3 className="font-display uppercase text-sm tracking-tight leading-none text-vibrant-coral">
+                      Smart AI Rate Advisor
+                    </h3>
+                    <p className="font-mono text-[9px] uppercase opacity-50 mt-1">
+                      Driven by scikit-learn GradientBoostingRegressor
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                  <div className="md:col-span-2">
+                    <p className="font-mono text-xs leading-relaxed opacity-95">
+                      Based on {listing.freelancerName || listing.name.split(' ')[0]}'s rating of <span className="font-bold text-vibrant-coral">{listing.rating} stars</span> in <span className="font-bold">{listing.location}</span>, our machine learning model recommends a custom rate between <span className="font-bold text-white">${report.prediction.minPrice}/hr</span> and <span className="font-bold text-white">${report.prediction.maxPrice}/hr</span>.
+                    </p>
+                    <p className="font-mono text-[10px] mt-3 text-vibrant-coral opacity-90 uppercase font-bold">
+                      {listing.price < report.prediction.minPrice ? "⚡ Pricing below recommended rate — great value for clients!" :
+                       listing.price > report.prediction.maxPrice ? "⚠️ Premium pricing above recommended AI rate." :
+                       "✓ Rate is optimized and falls within the AI recommended range!"}
+                    </p>
+                  </div>
+                  <div className="bg-white text-black p-4 border-2 border-black text-center shadow-brutal-sm">
+                    <div className="font-mono text-[9px] uppercase opacity-60">AI Suggested</div>
+                    <div className="font-display text-2xl tracking-tighter text-shadow-grey">${report.prediction.suggestedPrice}/hr</div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* ── Price Distribution Bar Chart ─────────────────── */}
             <section>
               <div className="font-mono text-[10px] uppercase tracking-widest opacity-60 mb-4">
