@@ -4,6 +4,8 @@ db.py — Supabase read connection for the ML service.
 The ML service uses the service role key so it can read aggregate
 transaction data across all users without being restricted by RLS.
 """
+from __future__ import annotations
+
 import os
 from supabase import create_client, Client
 

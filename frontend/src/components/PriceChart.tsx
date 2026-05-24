@@ -37,7 +37,7 @@ export const PriceChart = ({ activeRange, data }: PriceChartProps) => {
               if (active && payload && payload.length) {
                 return (
                   <div className="bg-shadow-grey text-white p-2 border-2 border-black text-xs font-mono">
-                    {payload[0].payload.range}: {payload[0].value} freelancers
+                    {payload[0].payload.range}: {payload[0].value} results
                   </div>
                 );
               }
