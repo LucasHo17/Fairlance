@@ -137,6 +137,9 @@ def health() -> dict:
 # ── CLI training entrypoint ──────────────────────────────────
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", action="store_true")
     args = parser.parse_args()

@@ -23,11 +23,11 @@ def get_client() -> Client:
 
 def fetch_training_data():
     """
-    Fetches completed transactions joined with their category slug for
-    model training.
+    Fetches completed transactions joined with their category slug, location, 
+    and freelancer ratings for model training.
 
     Returns:
-        X (np.ndarray): feature matrix [category_enc, location_enc, rating_placeholder]
+        X (np.ndarray): feature matrix [category_enc, location_enc, rating]
         y (np.ndarray): target prices
         category_labels (list[str]): all category slugs seen
         location_labels (list[str]): all zip codes seen
@@ -37,11 +37,11 @@ def fetch_training_data():
 
     client = get_client()
 
-    # Pull completed transactions with category slug.
+    # Pull completed transactions joined with category slug and freelancer's zip code.
     res = (
         client.table("transactions")
-        .select("final_price, category_id, categories(slug)")
-        .not_("completed_at", "is", "null")
+        .select("final_price, category_id, freelancer_id, categories(slug), freelancer:users!transactions_freelancer_id_fkey(zip_code)")
+        .not_.is_("completed_at", "null")
         .execute()
     )
     rows = res.data or []
@@ -49,9 +49,14 @@ def fetch_training_data():
     if not rows:
         raise ValueError("No completed transactions found for training.")
 
+    # Pull actual review rating aggregates per freelancer to map them to transactions
+    ratings_res = client.table("freelancer_rating_aggregates").select("freelancer_id, avg_overall").execute()
+    ratings_map = {r["freelancer_id"]: float(r["avg_overall"]) for r in (ratings_res.data or [])}
+
     categories = [r["categories"]["slug"] if r.get("categories") else "unknown" for r in rows]
     prices     = [float(r["final_price"]) for r in rows]
-    locations  = ["unknown"] * len(rows)  # zip_code not on transactions; placeholder
+    locations  = [r["freelancer"]["zip_code"] if r.get("freelancer") and r["freelancer"].get("zip_code") else "unknown" for r in rows]
+    ratings    = [ratings_map.get(r["freelancer_id"], 4.5) for r in rows]
 
     cat_enc = LabelEncoder().fit(categories)
     loc_enc = LabelEncoder().fit(locations)
@@ -59,7 +64,7 @@ def fetch_training_data():
     X = np.column_stack([
         cat_enc.transform(categories),
         loc_enc.transform(locations),
-        [4.5] * len(rows),  # rating placeholder (not stored on transaction)
+        ratings,
     ])
     y = np.array(prices)
 

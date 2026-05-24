@@ -79,7 +79,19 @@ python -m app.models.price_predictor --train
 python -m app.models.anomaly_detector --train
 ```
 
-Serialized models are saved to `app/trained_models/` as `.pkl` files. These are gitignored — Railway re-trains on deploy or loads from a mounted volume.
+Serialized models are saved to `app/trained_models/` as `.pkl` files. 
+
+### Production Deployment & Automatic Training on Railway
+Because `price_predictor.pkl` is gitignored, the model is trained automatically in production **during the container startup/deployment phase** using Railway's configured environment variables. 
+
+The `Dockerfile` handles this automatically using the following entrypoint command:
+```dockerfile
+CMD ["sh", "-c", "python -m app.models.price_predictor --train && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+```
+
+This guarantees that:
+1. The model is trained dynamically using your live production database transactions.
+2. The `/predict-price/health` health check endpoint will return `{"status": "ok", "model_loaded": true}` in production without requiring manual model file uploads.
 
 ## Cold start
 
