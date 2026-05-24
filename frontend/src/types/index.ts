@@ -55,6 +55,12 @@ export interface ScatterPoint {
   isCurrent?: boolean;
 }
 
+export interface PricePrediction {
+  minPrice: number;
+  maxPrice: number;
+  suggestedPrice: number;
+}
+
 export interface PricingReport {
   category: string;
   marketAvg: number;
@@ -65,4 +71,5 @@ export interface PricingReport {
   percentile: number;           // where the selected freelancer sits (0–100)
   priceDistribution: PriceDistributionBucket[];
   scatterData: ScatterPoint[];
+  prediction?: PricePrediction;
 }

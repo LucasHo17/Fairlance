@@ -250,6 +250,7 @@ export const FreelancerProfile = () => {
               priceDistribution: reportData.priceDistribution?.length > 0 ? reportData.priceDistribution : mockReport.priceDistribution,
               scatterData: scatterWithCurrent,
               percentile,
+              prediction: reportData.prediction,
             });
           } else {
             setReport(mockReport);
