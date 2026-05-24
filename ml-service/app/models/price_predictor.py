@@ -8,6 +8,8 @@ percentile-based heuristic so the Market Comparator works from day one.
 Train the model:
     python -m app.models.price_predictor --train
 """
+from __future__ import annotations
+
 import argparse
 import os
 from pathlib import Path
