@@ -1,5 +1,4 @@
 {
-  "cleanUrls": true,
   "rewrites": [
     {
       "source": "/(.*)",
@@ -7,3 +6,4 @@
     }
   ]
 }
+
