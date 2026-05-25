@@ -117,11 +117,52 @@ const NewListingModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [zipCode, setZipCode] = useState('');
+  const [avgRating, setAvgRating] = useState(4.5);
+  const [prediction, setPrediction] = useState<{ minPrice: number; maxPrice: number; suggestedPrice: number } | null>(null);
+  const [fetchingPrediction, setFetchingPrediction] = useState(false);
+
   useEffect(() => {
     supabase.from('categories').select('id, name').order('name').then(({ data }) => {
       if (data) setCategories(data);
     });
-  }, []);
+
+    if (freelancerId) {
+      supabase.from('users').select('zip_code').eq('id', freelancerId).single().then(({ data }) => {
+        if (data?.zip_code) setZipCode(data.zip_code);
+      });
+      supabase.from('freelancer_rating_aggregates').select('avg_overall').eq('freelancer_id', freelancerId).maybeSingle().then(({ data }) => {
+        if (data?.avg_overall) setAvgRating(data.avg_overall);
+      });
+    }
+  }, [freelancerId]);
+
+  useEffect(() => {
+    if (!categoryId) {
+      setPrediction(null);
+      return;
+    }
+    setFetchingPrediction(true);
+    supabase.functions.invoke('generate-pricing-report', {
+      method: 'POST',
+      body: {
+        category_id: categoryId,
+        location: zipCode || '',
+        rating: avgRating,
+      },
+    }).then(({ data }) => {
+      if (data?.prediction && data.prediction.suggestedPrice > 0) {
+        setPrediction(data.prediction);
+      } else {
+        setPrediction(null);
+      }
+    }).catch(() => {
+      setPrediction(null);
+    }).finally(() => {
+      setFetchingPrediction(false);
+    });
+  }, [categoryId, zipCode, avgRating]);
+
 
   const addPricingRow = () =>
     setPricingModels(prev => [...prev, { strategy_type: 'hourly', base_price: 0 }]);
@@ -136,6 +177,7 @@ const NewListingModal = ({
     e.preventDefault();
     if (!title.trim()) { setError('Title is required'); return; }
     if (!categoryId) { setError('Please select a category'); return; }
+    if (!description.trim()) { setError('Description is required'); return; }
     setLoading(true);
     setError('');
     try {
@@ -162,7 +204,10 @@ const NewListingModal = ({
     }
   };
 
+  const hourlyPrice = Number(pricingModels.find(pm => pm.strategy_type === 'hourly')?.base_price ?? 0);
+
   return (
+
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -204,7 +249,7 @@ const NewListingModal = ({
             </select>
           </div>
           <div>
-            <label className="font-display uppercase text-[10px] tracking-widest block mb-1">Description</label>
+            <label className="font-display uppercase text-[10px] tracking-widest block mb-1">Description *</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -259,8 +304,44 @@ const NewListingModal = ({
                 </div>
               ))}
             </div>
+
+            {prediction && (
+              <div className="mt-4 p-4 border-2 border-black bg-white shadow-brutal-sm text-xs font-mono">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-vibrant-coral">AI Rate Advisor</span>
+                  <span className={cn(
+                    "px-2 py-0.5 border border-black font-bold uppercase text-[8px]",
+                    hourlyPrice === 0 && "bg-bone text-black",
+                    hourlyPrice > 0 && hourlyPrice < prediction.minPrice && "bg-vibrant-coral text-white",
+                    hourlyPrice >= prediction.minPrice && hourlyPrice <= prediction.maxPrice && "bg-shadow-grey text-white",
+                    hourlyPrice > prediction.maxPrice && "bg-[#FFF0ed] text-vibrant-coral border-vibrant-coral"
+                  )}>
+                    {hourlyPrice === 0 ? "Set hourly rate" :
+                     hourlyPrice < prediction.minPrice ? "Value Rate" :
+                     hourlyPrice > prediction.maxPrice ? "Premium Rate" :
+                     "Optimized Rate"}
+                  </span>
+                </div>
+                <p className="leading-relaxed opacity-80">
+                  Based on your rating of <span className="font-bold text-shadow-grey">{avgRating} stars</span> and location, our AI recommends an hourly rate between <span className="font-bold">${prediction.minPrice}</span> and <span className="font-bold">${prediction.maxPrice}/hr</span> (Suggested: <span className="font-bold">${prediction.suggestedPrice}/hr</span>).
+                </p>
+                {hourlyPrice > 0 && (
+                  <p className="mt-2 font-bold text-[10px] uppercase text-vibrant-coral">
+                    {hourlyPrice < prediction.minPrice ? "⚡ Pricing below recommended rate — great value for clients!" :
+                     hourlyPrice > prediction.maxPrice ? "⚠️ Premium pricing above recommended AI rate." :
+                     "✓ Rate is optimized and falls within the AI recommended range!"}
+                  </p>
+                )}
+              </div>
+            )}
+            {fetchingPrediction && (
+              <div className="mt-2 font-mono text-[9px] uppercase opacity-40 animate-pulse">
+                Fetching AI market recommendation...
+              </div>
+            )}
           </div>
         </div>
+
 
         {error && (
           <div className="mt-4 font-mono text-xs text-vibrant-coral border-2 border-vibrant-coral px-3 py-2">
@@ -292,11 +373,13 @@ const EditListingModal = ({
   initialPricingModels,
   onSaved,
   onClose,
+  freelancerId,
 }: {
   listing: ServiceListing;
   initialPricingModels: PricingModelRow[];
   onSaved: () => void;
   onClose: () => void;
+  freelancerId: string;
 }) => {
   const [title, setTitle] = useState(listing.title);
   const [description, setDescription] = useState(listing.description);
@@ -310,11 +393,52 @@ const EditListingModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [zipCode, setZipCode] = useState('');
+  const [avgRating, setAvgRating] = useState(4.5);
+  const [prediction, setPrediction] = useState<{ minPrice: number; maxPrice: number; suggestedPrice: number } | null>(null);
+  const [fetchingPrediction, setFetchingPrediction] = useState(false);
+
   useEffect(() => {
     supabase.from('categories').select('id, name').order('name').then(({ data }) => {
       if (data) setCategories(data);
     });
-  }, []);
+
+    if (freelancerId) {
+      supabase.from('users').select('zip_code').eq('id', freelancerId).single().then(({ data }) => {
+        if (data?.zip_code) setZipCode(data.zip_code);
+      });
+      supabase.from('freelancer_rating_aggregates').select('avg_overall').eq('freelancer_id', freelancerId).maybeSingle().then(({ data }) => {
+        if (data?.avg_overall) setAvgRating(data.avg_overall);
+      });
+    }
+  }, [freelancerId]);
+
+  useEffect(() => {
+    if (!categoryId) {
+      setPrediction(null);
+      return;
+    }
+    setFetchingPrediction(true);
+    supabase.functions.invoke('generate-pricing-report', {
+      method: 'POST',
+      body: {
+        category_id: categoryId,
+        location: zipCode || '',
+        rating: avgRating,
+      },
+    }).then(({ data }) => {
+      if (data?.prediction && data.prediction.suggestedPrice > 0) {
+        setPrediction(data.prediction);
+      } else {
+        setPrediction(null);
+      }
+    }).catch(() => {
+      setPrediction(null);
+    }).finally(() => {
+      setFetchingPrediction(false);
+    });
+  }, [categoryId, zipCode, avgRating]);
+
 
   const addPricingRow = () =>
     setPricingModels(prev => [...prev, { strategy_type: 'hourly', base_price: 0 }]);
@@ -328,6 +452,7 @@ const EditListingModal = ({
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim()) { setError('Title is required'); return; }
+    if (!description.trim()) { setError('Description is required'); return; }
     setLoading(true);
     setError('');
     try {
@@ -352,7 +477,10 @@ const EditListingModal = ({
     }
   };
 
+  const hourlyPrice = Number(pricingModels.find(pm => pm.strategy_type === 'hourly')?.base_price ?? 0);
+
   return (
+
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -393,7 +521,7 @@ const EditListingModal = ({
             </select>
           </div>
           <div>
-            <label className="font-display uppercase text-[10px] tracking-widest block mb-1">Description</label>
+            <label className="font-display uppercase text-[10px] tracking-widest block mb-1">Description *</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -447,8 +575,44 @@ const EditListingModal = ({
                 </div>
               ))}
             </div>
+
+            {prediction && (
+              <div className="mt-4 p-4 border-2 border-black bg-white shadow-brutal-sm text-xs font-mono">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-[9px] uppercase tracking-wider text-vibrant-coral">AI Rate Advisor</span>
+                  <span className={cn(
+                    "px-2 py-0.5 border border-black font-bold uppercase text-[8px]",
+                    hourlyPrice === 0 && "bg-bone text-black",
+                    hourlyPrice > 0 && hourlyPrice < prediction.minPrice && "bg-vibrant-coral text-white",
+                    hourlyPrice >= prediction.minPrice && hourlyPrice <= prediction.maxPrice && "bg-shadow-grey text-white",
+                    hourlyPrice > prediction.maxPrice && "bg-[#FFF0ed] text-vibrant-coral border-vibrant-coral"
+                  )}>
+                    {hourlyPrice === 0 ? "Set hourly rate" :
+                     hourlyPrice < prediction.minPrice ? "Value Rate" :
+                     hourlyPrice > prediction.maxPrice ? "Premium Rate" :
+                     "Optimized Rate"}
+                  </span>
+                </div>
+                <p className="leading-relaxed opacity-80">
+                  Based on your rating of <span className="font-bold text-shadow-grey">{avgRating} stars</span> and location, our AI recommends an hourly rate between <span className="font-bold">${prediction.minPrice}</span> and <span className="font-bold">${prediction.maxPrice}/hr</span> (Suggested: <span className="font-bold">${prediction.suggestedPrice}/hr</span>).
+                </p>
+                {hourlyPrice > 0 && (
+                  <p className="mt-2 font-bold text-[10px] uppercase text-vibrant-coral">
+                    {hourlyPrice < prediction.minPrice ? "⚡ Pricing below recommended rate — great value for clients!" :
+                     hourlyPrice > prediction.maxPrice ? "⚠️ Premium pricing above recommended AI rate." :
+                     "✓ Rate is optimized and falls within the AI recommended range!"}
+                  </p>
+                )}
+              </div>
+            )}
+            {fetchingPrediction && (
+              <div className="mt-2 font-mono text-[9px] uppercase opacity-40 animate-pulse">
+                Fetching AI market recommendation...
+              </div>
+            )}
           </div>
         </div>
+
 
         {error && (
           <div className="mt-4 font-mono text-xs text-vibrant-coral border-2 border-vibrant-coral px-3 py-2">
@@ -792,6 +956,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
             initialPricingModels={pricingModelsMap[listingToEdit.id] ?? []}
             onSaved={fetchData}
             onClose={() => setListingToEdit(null)}
+            freelancerId={freelancerId}
           />
         )}
       </AnimatePresence>
