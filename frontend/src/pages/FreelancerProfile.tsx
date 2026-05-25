@@ -157,7 +157,7 @@ export const FreelancerProfile = () => {
           .from('freelancer_rating_aggregates')
           .select('avg_overall, review_count')
           .eq('freelancer_id', freelancerId)
-          .single();
+          .maybeSingle();
 
         const repo = new ReviewRepository();
         const profileReviews = await repo.getByListing(id);

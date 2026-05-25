@@ -107,4 +107,41 @@ describe('OfferModal', () => {
     await waitFor(() => screen.getByText(/offer sent/i));
     expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
   });
+
+  it('renders the AI Offer Validator card when pricing prediction is fetched', async () => {
+    const { supabase } = await import('../lib/supabaseClient');
+    vi.mocked(supabase.functions.invoke).mockResolvedValueOnce({
+      data: {
+        category_id: 'cat-123',
+        freelancer_id: 'fl-123',
+        users: { zip_code: '10001' },
+      },
+      error: null,
+    });
+    vi.mocked(supabase.from).mockReturnValueOnce({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { avg_overall: 4.8 }, error: null }),
+    } as any);
+    vi.mocked(supabase.functions.invoke).mockResolvedValueOnce({
+      data: {
+        prediction: {
+          minPrice: 50,
+          maxPrice: 100,
+          suggestedPrice: 75,
+        },
+      },
+      error: null,
+    });
+
+    render(<OfferModal listing={MOCK_LISTING} user={null} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/AI Offer Validator/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/recommends a rate between/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$50/)).toHaveLength(2);
+    expect(screen.getByText(/\$100\/hr/)).toBeInTheDocument();
+  });
 });
