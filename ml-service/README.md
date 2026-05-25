@@ -72,16 +72,30 @@ All read from the root `.env` file. See `.env.example` for where to find each va
 
 ## Training the models
 
-On first run (or when enough new transaction data has accumulated), train and serialize the models:
+On first run (or when enough new transaction data has accumulated), train and serialize the models. 
+
+### Local Training
+To train the models locally (which will save serialized `.pkl` files to `app/trained_models/`):
 
 ```bash
+# Ensure your virtual environment is active
+source .venv/bin/activate
+
+# Train the price predictor and anomaly detector
 python -m app.models.price_predictor --train
 python -m app.models.anomaly_detector --train
 ```
 
-Serialized models are saved to `app/trained_models/` as `.pkl` files. 
+### Production Training (Direct CLI)
+To manually trigger a training run against the live production Supabase database:
+1. Ensure your root `.env` contains the production `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (linked to `buubkphmzsrnkslltzxn.supabase.co`).
+2. Run the exact training command:
+```bash
+source .venv/bin/activate
+python -m app.models.price_predictor --train
+```
 
-### Production Deployment & Automatic Training on Railway
+### Automatic Production Training on Railway
 Because `price_predictor.pkl` is gitignored, the model is trained automatically in production **during the container startup/deployment phase** using Railway's configured environment variables. 
 
 The `Dockerfile` handles this automatically using the following entrypoint command:
@@ -105,14 +119,32 @@ python -m app.data.seed_loader
 
 The service deploys automatically from the `ml-service/` directory on push to `main`.
 
-Set environment variables in the Railway dashboard under Variables:
+### Step-by-Step Railway Deployment
+1. **Push to GitHub**: Push your local changes to the `main` branch:
+   ```bash
+   git push origin main
+   ```
+2. **Environment Variables**: In your Railway dashboard under your service's **Variables**, set:
+   - `SUPABASE_URL`: `https://buubkphmzsrnkslltzxn.supabase.co`
+   - `SUPABASE_SERVICE_ROLE_KEY`: `<your-production-service-role-key>`
+3. **Automatic Build**: Railway automatically detects the `Dockerfile` and builds the container. During startup, the container trains the model on the production database and spins up the FastAPI app.
+4. **Link Supabase Edge Functions**: Once Railway assigns a public domain (e.g., `https://ml-service-production.up.railway.app`), set the `ML_SERVICE_URL` secret in Supabase:
+   ```bash
+   supabase secrets set ML_SERVICE_URL=https://your-railway-url.railway.app --project-ref buubkphmzsrnkslltzxn
+   ```
 
+### Verifying Deployed Health
+To verify that the model is successfully loaded in the production environment, make a request to the health endpoint:
+```bash
+curl https://your-railway-url.railway.app/predict-price/health
 ```
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+**Expected Response:**
+```json
+{
+  "status": "ok",
+  "model_loaded": true
+}
 ```
-
-Railway detects the `Dockerfile` automatically.
 
 ## Testing
 

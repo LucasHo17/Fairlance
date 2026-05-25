@@ -113,12 +113,22 @@ A single root `.env` file (copied from `.env.example`) configures all three serv
 
 ## Deployment
 
-| Service | Platform | Trigger |
-|---|---|---|
-| Frontend | Vercel | Auto-deploy on push to `main` |
-| ML service | Railway | Auto-deploy on push to `main` |
-| DB migrations | Supabase | Manual: `supabase db push` |
-| Edge Functions | Supabase | Manual: `supabase functions deploy <name>` |
+| Service | Platform | Trigger / Command | Production Reference |
+|---|---|---|---|
+| Frontend | Vercel | Auto-deploy on push to `main` | `https://fairlance.vercel.app` (or your active Vercel domain) |
+| ML service | Railway | Auto-deploy on push to `main` | `https://fairlance-production.up.railway.app` |
+| DB migrations | Supabase | `supabase db push --project-ref buubkphmzsrnkslltzxn` | Project ID: `buubkphmzsrnkslltzxn` |
+| Edge Functions | Supabase | `supabase functions deploy <name> --project-ref buubkphmzsrnkslltzxn` | Project ID: `buubkphmzsrnkslltzxn` |
+
+### Production Environment Linking
+Once your services are deployed, ensure your database and ML pipelines are connected by setting production secrets:
+```bash
+# Set ML URL on production Supabase Edge Functions
+supabase secrets set ML_SERVICE_URL=https://fairlance-production.up.railway.app --project-ref buubkphmzsrnkslltzxn
+
+# Set service role key on production Supabase Edge Functions
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-production-service-role-key --project-ref buubkphmzsrnkslltzxn
+```
 
 ## Testing
 

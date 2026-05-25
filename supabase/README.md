@@ -98,13 +98,11 @@ Run `supabase status` at any time to retrieve your local `anon key` (listed as `
 
 ### Cloud secrets (production)
 
-
-Edge Functions on Railway/Supabase cloud read secrets set via the CLI:
-
+Edge Functions on your production Supabase project read secrets set via the CLI. To link your deployed ML service and database key to the production project (`buubkphmzsrnkslltzxn`), run:
 
 ```bash
-supabase secrets set ML_SERVICE_URL=https://your-railway-url.railway.app
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+supabase secrets set ML_SERVICE_URL=https://fairlance-production.up.railway.app --project-ref buubkphmzsrnkslltzxn
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-production-service-role-key --project-ref buubkphmzsrnkslltzxn
 ```
 
 
