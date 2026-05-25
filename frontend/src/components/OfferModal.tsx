@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CustomerUser } from '../models/users/UserSubclasses';
 import { getPricingReport } from '../data/mockData';
 import { X, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../lib/supabaseClient';
 
 interface OfferModalProps {
   listing: any;
@@ -16,6 +17,74 @@ export function OfferModal({ listing, user, onClose }: OfferModalProps) {
   const [scope, setScope] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  const [zipCode, setZipCode] = useState('');
+  const [avgRating, setAvgRating] = useState(4.5);
+  const [categoryId, setCategoryId] = useState('');
+  const [prediction, setPrediction] = useState<{ minPrice: number; maxPrice: number; suggestedPrice: number } | null>(null);
+  const [fetchingPrediction, setFetchingPrediction] = useState(false);
+
+  useEffect(() => {
+    if (!listing?.id) return;
+
+    const fetchDetails = async () => {
+      try {
+        const { data: item, error } = await supabase.functions.invoke(`get-listings?id=${encodeURIComponent(listing.id.toString())}`, {
+          method: 'GET',
+        });
+        if (error || !item) return;
+
+        if (item.category_id) setCategoryId(item.category_id);
+        const fId = item.freelancer_id;
+        const location = item.users?.service_area || item.users?.zip_code || '';
+        if (location) setZipCode(location);
+
+        if (fId) {
+          const { data: ratingData } = await supabase
+            .from('freelancer_rating_aggregates')
+            .select('avg_overall')
+            .eq('freelancer_id', fId)
+            .maybeSingle();
+
+          if (ratingData?.avg_overall) {
+            setAvgRating(ratingData.avg_overall);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching listing details in OfferModal:', err);
+      }
+    };
+
+    fetchDetails();
+  }, [listing?.id]);
+
+  useEffect(() => {
+    if (!categoryId) {
+      setPrediction(null);
+      return;
+    }
+
+    setFetchingPrediction(true);
+    supabase.functions.invoke('generate-pricing-report', {
+      method: 'POST',
+      body: {
+        category_id: categoryId,
+        location: zipCode || '',
+        rating: avgRating,
+      },
+    }).then(({ data }) => {
+      if (data?.prediction && data.prediction.suggestedPrice > 0) {
+        setPrediction(data.prediction);
+      } else {
+        setPrediction(null);
+      }
+    }).catch((err) => {
+      console.error('Error fetching prediction:', err);
+      setPrediction(null);
+    }).finally(() => {
+      setFetchingPrediction(false);
+    });
+  }, [categoryId, zipCode, avgRating]);
 
   // Market comparator data
   const report = getPricingReport(listing);
@@ -91,6 +160,47 @@ export function OfferModal({ listing, user, onClose }: OfferModalProps) {
                     className="w-full p-3 border-2 border-black font-mono text-lg focus:outline-none focus:ring-2 focus:ring-vibrant-coral/20"
                     placeholder="e.g. 150"
                   />
+                  {(() => {
+                    const offerPrice = parseFloat(amount) || 0;
+                    return (
+                      <>
+                        {prediction && (
+                          <div className="mt-4 p-4 border-2 border-black bg-white shadow-brutal-sm text-xs font-mono">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-bold text-[9px] uppercase tracking-wider text-vibrant-coral">AI Offer Validator</span>
+                              <span className={cn(
+                                "px-2 py-0.5 border border-black font-bold uppercase text-[8px]",
+                                offerPrice === 0 && "bg-bone text-black",
+                                offerPrice > 0 && offerPrice < prediction.minPrice && "bg-vibrant-coral text-white",
+                                offerPrice >= prediction.minPrice && offerPrice <= prediction.maxPrice && "bg-shadow-grey text-white",
+                                offerPrice > prediction.maxPrice && "bg-[#FFF0ed] text-vibrant-coral border-vibrant-coral"
+                              )}>
+                                {offerPrice === 0 ? "Set offer rate" :
+                                 offerPrice < prediction.minPrice ? "Competitive Value" :
+                                 offerPrice > prediction.maxPrice ? "Premium Offer" :
+                                 "Fair Market Rate"}
+                              </span>
+                            </div>
+                            <p className="leading-relaxed opacity-80 text-black">
+                              Based on rating of <span className="font-bold text-shadow-grey">{avgRating} stars</span> and location, our AI recommends a rate between <span className="font-bold">${prediction.minPrice}</span> and <span className="font-bold">${prediction.maxPrice}/hr</span> (Suggested: <span className="font-bold">${prediction.suggestedPrice}/hr</span>).
+                            </p>
+                            {offerPrice > 0 && (
+                              <p className="mt-2 font-bold text-[10px] uppercase text-vibrant-coral">
+                                {offerPrice < prediction.minPrice ? "⚡ Your offer is below the recommended range. This is an excellent value for you, but might require negotiation!" :
+                                 offerPrice > prediction.maxPrice ? "💎 Your offer is premium. Highly attractive to the freelancer!" :
+                                 "✓ Your offer is in the optimal range. High likelihood of acceptance!"}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {fetchingPrediction && (
+                          <div className="mt-2 font-mono text-[9px] uppercase opacity-40 animate-pulse text-black">
+                            Fetching AI market recommendation...
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div>
                   <label className="block font-mono text-xs uppercase mb-2">Scope of Work (Optional)</label>
