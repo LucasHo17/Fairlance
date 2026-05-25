@@ -7,6 +7,7 @@ import { ServiceListing, Offer } from '../models/marketplace/Marketplace';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { cn } from '../lib/utils';
 import { OfferCard } from '../components/OfferCard';
+import { mlServiceClient } from '../services/repositories/CoreServices';
 
 interface FreelancerDashboardProps {
   user: { id?: string; name: string; email: string };
@@ -121,6 +122,42 @@ const NewListingModal = ({
   const [avgRating, setAvgRating] = useState(4.5);
   const [prediction, setPrediction] = useState<{ minPrice: number; maxPrice: number; suggestedPrice: number } | null>(null);
   const [fetchingPrediction, setFetchingPrediction] = useState(false);
+
+  const [categorization, setCategorization] = useState<{ match: boolean; confidence: number } | null>(null);
+  const [checkingCategorization, setCheckingCategorization] = useState(false);
+
+  useEffect(() => {
+    if (!description || !categoryId) {
+      setCategorization(null);
+      return;
+    }
+
+    const categoryName = categories.find(c => c.id === categoryId)?.name || '';
+    const categorySlug = categoryName.toLowerCase().trim().replace(/\s+/g, '-');
+
+    setCheckingCategorization(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await mlServiceClient.categorizeService({
+          description: description,
+          claimedCategory: categorySlug,
+        });
+        if (res) {
+          setCategorization(res);
+        } else {
+          setCategorization(null);
+        }
+      } catch (err) {
+        console.error('Categorization check error:', err);
+        setCategorization(null);
+      } finally {
+        setCheckingCategorization(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [description, categoryId, categories]);
 
   useEffect(() => {
     supabase.from('categories').select('id, name').order('name').then(({ data }) => {
@@ -257,6 +294,23 @@ const NewListingModal = ({
               placeholder="Describe what you offer..."
               className="w-full border-2 border-black bg-white px-4 py-3 font-mono text-sm focus:outline-none focus:border-vibrant-coral resize-none"
             />
+            {checkingCategorization && (
+              <div className="mt-2 font-mono text-[9px] uppercase opacity-40 animate-pulse text-black">
+                🔍 AI validating category match...
+              </div>
+            )}
+            {categorization && (
+              <div className={cn(
+                "mt-2 p-3 border-2 border-black shadow-brutal-sm text-[10px] font-mono uppercase font-bold",
+                categorization.match ? "bg-[#e6f4ea] text-[#137333]" : "bg-[#fef7e0] text-[#b06000]"
+              )}>
+                {categorization.match ? (
+                  <span>✓ Category Verified ({(categorization.confidence * 100).toFixed(0)}% semantic match)</span>
+                ) : (
+                  <span>⚠️ Category Mismatch Warning ({(categorization.confidence * 100).toFixed(0)}% match — may trigger spam moderation)</span>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -398,6 +452,42 @@ const EditListingModal = ({
   const [prediction, setPrediction] = useState<{ minPrice: number; maxPrice: number; suggestedPrice: number } | null>(null);
   const [fetchingPrediction, setFetchingPrediction] = useState(false);
 
+  const [categorization, setCategorization] = useState<{ match: boolean; confidence: number } | null>(null);
+  const [checkingCategorization, setCheckingCategorization] = useState(false);
+
+  useEffect(() => {
+    if (!description || !categoryId) {
+      setCategorization(null);
+      return;
+    }
+
+    const categoryName = categories.find(c => c.id === categoryId)?.name || '';
+    const categorySlug = categoryName.toLowerCase().trim().replace(/\s+/g, '-');
+
+    setCheckingCategorization(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await mlServiceClient.categorizeService({
+          description: description,
+          claimedCategory: categorySlug,
+        });
+        if (res) {
+          setCategorization(res);
+        } else {
+          setCategorization(null);
+        }
+      } catch (err) {
+        console.error('Categorization check error:', err);
+        setCategorization(null);
+      } finally {
+        setCheckingCategorization(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [description, categoryId, categories]);
+
   useEffect(() => {
     supabase.from('categories').select('id, name').order('name').then(({ data }) => {
       if (data) setCategories(data);
@@ -528,6 +618,23 @@ const EditListingModal = ({
               rows={3}
               className="w-full border-2 border-black bg-white px-4 py-3 font-mono text-sm focus:outline-none focus:border-vibrant-coral resize-none"
             />
+            {checkingCategorization && (
+              <div className="mt-2 font-mono text-[9px] uppercase opacity-40 animate-pulse text-black">
+                🔍 AI validating category match...
+              </div>
+            )}
+            {categorization && (
+              <div className={cn(
+                "mt-2 p-3 border-2 border-black shadow-brutal-sm text-[10px] font-mono uppercase font-bold",
+                categorization.match ? "bg-[#e6f4ea] text-[#137333]" : "bg-[#fef7e0] text-[#b06000]"
+              )}>
+                {categorization.match ? (
+                  <span>✓ Category Verified ({(categorization.confidence * 100).toFixed(0)}% semantic match)</span>
+                ) : (
+                  <span>⚠️ Category Mismatch Warning ({(categorization.confidence * 100).toFixed(0)}% match — may trigger spam moderation)</span>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
