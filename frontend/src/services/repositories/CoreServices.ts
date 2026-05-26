@@ -40,8 +40,12 @@ export const mlServiceClient = {
     return mlPost<AnomalyResult>('/detect-anomalies', { prices });
   },
 
-  categorizeService(payload: { description: string; claimedCategory: string }) {
-    return mlPost<CategorizationResult>('/categorize-service', payload);
+  async categorizeService(payload: { description: string; claimedCategory: string }) {
+    const { data, error } = await supabase.functions.invoke('categorize-service', {
+      body: payload,
+    });
+    if (error) throw error;
+    return data as CategorizationResult;
   },
 };
 
