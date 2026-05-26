@@ -77,7 +77,9 @@ class TestHeuristic:
 class TestPredict:
     """Tests for the public predict() method which falls back to heuristic when no model is trained."""
 
-    def test_predict_without_model_uses_heuristic(self):
+    def test_predict_without_model_uses_heuristic(self, monkeypatch):
+        from pathlib import Path
+        monkeypatch.setattr("app.models.price_predictor.MODEL_PATH", Path("nonexistent_test_model.pkl"))
         p = PricePredictor()
         assert p.model is None
         r = p.predict("web-development", "01003", 4.5)
