@@ -10,7 +10,7 @@ Endpoints (not registered in main.py until P2 work begins):
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(tags=["forecasting"])
@@ -59,9 +59,15 @@ _service = ForecastingService()
 
 @router.post("/forecast-demand", response_model=ForecastDemandResponse)
 def forecast_demand(req: ForecastDemandRequest) -> ForecastDemandResponse:
-    return _service.forecast_demand(req.category_id, req.weeks_ahead)
+    try:
+        return _service.forecast_demand(req.category_id, req.weeks_ahead)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
 
 
 @router.post("/price-trend", response_model=PriceTrendResponse)
 def price_trend(req: PriceTrendRequest) -> PriceTrendResponse:
-    return _service.get_price_trend(req.category_id, req.weeks_ahead)
+    try:
+        return _service.get_price_trend(req.category_id, req.weeks_ahead)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))

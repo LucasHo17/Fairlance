@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.models.price_predictor import router as price_router
 from app.models.anomaly_detector import router as anomaly_router
 from app.models.service_categorizer import router as category_router
+from app.models.forecasting_service import router as forecasting_router
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(price_router)
 app.include_router(anomaly_router)
 app.include_router(category_router)
+app.include_router(forecasting_router)
 
 
 @app.get("/health")
