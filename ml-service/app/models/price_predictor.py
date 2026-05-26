@@ -11,6 +11,7 @@ Train the model:
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import os
 from pathlib import Path
 
@@ -61,6 +62,8 @@ class PricePredictor:
             self.model        = saved["model"]
             self.category_enc = saved["category_enc"]
             self.location_enc = saved["location_enc"]
+            # Invalidate prediction cache on reload
+            _cached_predict.cache_clear()
 
     def _heuristic(self, category: str, rating: float) -> PricePredictResponse:
         """Fallback when no model is trained yet."""
@@ -91,6 +94,9 @@ class PricePredictor:
         )
 
     def predict(self, category: str, location: str, rating: float) -> PricePredictResponse:
+        return _cached_predict(category, location, rating)
+
+    def _predict_uncached(self, category: str, location: str, rating: float) -> PricePredictResponse:
         if self.model is None:
             return self._heuristic(category, rating)
 
@@ -120,6 +126,13 @@ class PricePredictor:
             {"model": self.model, "category_enc": self.category_enc, "location_enc": self.location_enc},
             MODEL_PATH,
         )
+        # Invalidate prediction cache on retraining
+        _cached_predict.cache_clear()
+
+
+@lru_cache(maxsize=1024)
+def _cached_predict(category: str, location: str, rating: float) -> PricePredictResponse:
+    return PricePredictor.get()._predict_uncached(category, location, rating)
 
 
 # ── Router ───────────────────────────────────────────────────

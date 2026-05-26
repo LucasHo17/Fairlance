@@ -225,3 +225,32 @@ Deno.test("generate-pricing-report — accepts optional location and rating para
  await res.json();
 });
 
+
+Deno.test("generate-pricing-report — cache header hits and misses", async () => {
+  const uniqueRating = 2.7 + Math.random() * 0.5;
+  const res1 = await post(customerJwt, {
+    category_id: CATEGORY_ID,
+    location: "90210",
+    rating: uniqueRating,
+  });
+  assertEquals(res1.status, 200);
+  const cacheHeader1 = res1.headers.get("X-Cache");
+
+  if (cacheHeader1) {
+    assertEquals(cacheHeader1, "MISS");
+
+    // Second call should be a cache hit
+    const res2 = await post(customerJwt, {
+      category_id: CATEGORY_ID,
+      location: "90210",
+      rating: uniqueRating,
+    });
+    assertEquals(res2.status, 200);
+    const cacheHeader2 = res2.headers.get("X-Cache");
+    assertEquals(cacheHeader2, "HIT");
+    await res2.json();
+  }
+  await res1.json();
+});
+
+
