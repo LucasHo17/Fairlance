@@ -72,10 +72,10 @@ export class ServiceListing {
       .from('listings')
       .update(dbPatch)
       .eq('id', this.id)
-      .select()
+      .select('*, pricing_models(*)')
       .single();
     if (error) throw error;
-    Object.assign(this, ServiceListing.fromRow(data));
+    Object.assign(this, ServiceListing.fromRow(data, data.pricing_models?.[0] ?? null));
     return this;
   }
 

@@ -8,6 +8,8 @@ import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { cn } from '../lib/utils';
 import { OfferCard } from '../components/OfferCard';
 import { mlServiceClient } from '../services/repositories/CoreServices';
+import { PricingReportModal } from '../components/PricingReportModal';
+import { getPricingReport } from '../data/mockData';
 
 interface FreelancerDashboardProps {
   user: { id?: string; name: string; email: string };
@@ -40,21 +42,23 @@ const ListingCard = ({
   onView,
   onEdit,
   onDelete,
+  onOpenReport,
 }: {
   listing: ServiceListing;
   onToggle: (l: ServiceListing) => void | Promise<void>;
   onView: (l: ServiceListing) => void;
   onEdit: (l: ServiceListing) => void;
   onDelete: (l: ServiceListing) => void;
+  onOpenReport: (l: ServiceListing) => void;
 }) => (
   <motion.div
     layout
     className={cn(
-      'border-4 border-black p-5 bg-white shadow-brutal-sm',
+      'border-4 border-black p-5 bg-white shadow-brutal-sm flex flex-col',
       !listing.isActive && 'opacity-50'
     )}
   >
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex items-start justify-between gap-4 flex-1">
       <div className="flex-1 min-w-0">
         <div className="font-display uppercase text-lg tracking-tighter leading-tight truncate">
           {listing.title}
@@ -97,6 +101,13 @@ const ListingCard = ({
         </button>
       </div>
     </div>
+
+    <button
+      onClick={() => onOpenReport(listing)}
+      className="mt-4 w-full py-2 bg-white text-black font-mono uppercase text-xs border-2 border-black flex items-center justify-center gap-2 hover:bg-black hover:text-white transition-all shadow-brutal-xs hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5"
+    >
+      <TrendingUp size={14} className="text-vibrant-coral" /> Price Competitor Report
+    </button>
   </motion.div>
 );
 
@@ -758,8 +769,137 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
   const [pricingModelsMap, setPricingModelsMap] = useState<Record<string, PricingModelRow[]>>({});
   const [deleting, setDeleting] = useState(false);
 
+  const [activeReport, setActiveReport] = useState<any | null>(null);
+  const [selectedListingForReport, setSelectedListingForReport] = useState<any | null>(null);
+  const [loadingReport, setLoadingReport] = useState(false);
+
   const navigate = useNavigate();
   const freelancerId = user.id ?? '';
+
+  const handleOpenReport = async (listing: ServiceListing) => {
+    setLoadingReport(true);
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('zip_code, service_area')
+        .eq('id', freelancerId)
+        .maybeSingle();
+
+      const userLocation = userData?.service_area || userData?.zip_code || '';
+
+      const { data: ratingData } = await supabase
+        .from('freelancer_rating_aggregates')
+        .select('avg_overall, review_count')
+        .eq('freelancer_id', freelancerId)
+        .maybeSingle();
+
+      const rating = ratingData?.avg_overall ?? 4.5;
+      const reviewsCount = ratingData?.review_count ?? 0;
+
+      const { data: categoryData } = await supabase
+        .from('categories')
+        .select('name, slug')
+        .eq('id', listing.categoryId)
+        .maybeSingle();
+
+      const categoryName = categoryData?.name || '';
+      const categorySlug = categoryData?.slug || '';
+
+      // Normalize & map category to mockData keys
+      let mappedCategory = 'design';
+      if (categorySlug.includes('dev') || categorySlug.includes('code') || categorySlug.includes('software')) {
+        mappedCategory = 'development';
+      } else if (categorySlug.includes('writ') || categorySlug.includes('edit')) {
+        mappedCategory = 'writing';
+      }
+
+      const { data: reportData, error } = await supabase.functions.invoke('generate-pricing-report', {
+        method: 'POST',
+        body: {
+          category_id: listing.categoryId,
+          location: userLocation,
+          rating: rating,
+        },
+      });
+
+      if (error) throw error;
+
+      if (reportData && !reportData.error) {
+        const getListingPrice = (l: ServiceListing) => {
+          try {
+            return l.getPrice();
+          } catch {
+            const models = pricingModelsMap[l.id];
+            return models?.[0]?.base_price ?? 0;
+          }
+        };
+
+        const price = getListingPrice(listing);
+
+        const mockReport = getPricingReport({
+          id: listing.id,
+          name: user.name || 'You',
+          price: price,
+          category: mappedCategory,
+          role: categoryName || 'Freelancer',
+        } as any);
+
+        // Process scatter data exactly as in FreelancerProfile
+        const scatterBase = (reportData.scatterData?.length > 0 ? reportData.scatterData : mockReport.scatterData)
+          .map((p: any) => p.name === user.name || p.name === listing.title ? { ...p, isCurrent: true, price: price } : p);
+
+        const hasCurrentFreelancer = scatterBase.some((p: any) => p.isCurrent);
+        if (!hasCurrentFreelancer) {
+          scatterBase.push({
+            name: user.name || 'You',
+            price: price,
+            rating: rating,
+            reviews: reviewsCount,
+            isCurrent: true,
+          });
+        }
+
+        // Recalculate percentile exactly like FreelancerProfile
+        const allPrices = scatterBase.map((p: any) => p.price).sort((a: number, b: number) => a - b);
+        const below = allPrices.filter((p: number) => p < price).length;
+        const percentile = allPrices.length > 0 ? Math.round((below / allPrices.length) * 100) : mockReport.percentile;
+
+        const fullReport = {
+          ...mockReport,
+          category: categoryName || listing.title,
+          marketAvg: reportData.marketAvg ?? mockReport.marketAvg,
+          marketMedian: reportData.marketMedian ?? mockReport.marketMedian,
+          marketMin: reportData.marketMin ?? mockReport.marketMin,
+          marketMax: reportData.marketMax ?? mockReport.marketMax,
+          sampleSize: reportData.transactionCount ?? mockReport.sampleSize,
+          priceDistribution: reportData.priceDistribution?.length > 0 ? reportData.priceDistribution : mockReport.priceDistribution,
+          scatterData: scatterBase,
+          percentile,
+          prediction: reportData.prediction ?? mockReport.prediction,
+        };
+
+        setSelectedListingForReport({
+          id: listing.id,
+          name: user.name || 'You',
+          freelancerName: user.name,
+          role: categoryName || 'Freelancer',
+          category: mappedCategory,
+          price: price,
+          rating: rating,
+          reviews: reviewsCount,
+          location: userLocation || 'Remote',
+        });
+        setActiveReport(fullReport);
+      } else {
+        alert('Not enough transactions or pricing data available in this category yet to generate a market report.');
+      }
+    } catch (err) {
+      console.error('Error loading pricing report in dashboard:', err);
+      alert('Could not retrieve competitor pricing data.');
+    } finally {
+      setLoadingReport(false);
+    }
+  };
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -995,7 +1135,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
             ) : (
               <motion.div layout className="grid gap-4 md:grid-cols-2">
                 {listings.map(listing => (
-                  <ListingCard key={listing.id} listing={listing} onToggle={handleToggle} onView={handleViewListing} onEdit={item => setListingToEdit(item)} onDelete={item => setListingToDelete(item)} />
+                  <ListingCard key={listing.id} listing={listing} onToggle={handleToggle} onView={handleViewListing} onEdit={item => setListingToEdit(item)} onDelete={item => setListingToDelete(item)} onOpenReport={handleOpenReport} />
                 ))}
               </motion.div>
             )}
@@ -1067,6 +1207,29 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
           />
         )}
       </AnimatePresence>
+
+      {/* Competitor Price Analytics Report */}
+      {activeReport && selectedListingForReport && (
+        <PricingReportModal
+          report={activeReport}
+          listing={selectedListingForReport}
+          onClose={() => {
+            setActiveReport(null);
+            setSelectedListingForReport(null);
+          }}
+        />
+      )}
+
+      {/* Loading Analytics Spinner Overlay */}
+      {loadingReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white border-4 border-black p-8 shadow-brutal text-center max-w-sm">
+            <div className="w-12 h-12 border-4 border-black border-t-vibrant-coral rounded-full animate-spin mx-auto mb-4" />
+            <div className="font-display uppercase text-lg">Fetching Market Report</div>
+            <div className="font-mono text-[10px] uppercase opacity-60 mt-1">Analyzing competitor rates and scatter plots...</div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
