@@ -112,3 +112,48 @@ class TestSingleton:
         instance = PricePredictor.get()
         assert instance is not None
         assert PricePredictor._instance is instance
+
+
+class TestCaching:
+    def test_caching_hit_miss(self):
+        from app.models.price_predictor import _cached_predict
+        p = PricePredictor.get()
+        _cached_predict.cache_clear()
+
+        # Initial call should be a cache miss
+        info_before = _cached_predict.cache_info()
+        p.predict("web-development", "01003", 4.5)
+        info_after_miss = _cached_predict.cache_info()
+        assert info_after_miss.misses == info_before.misses + 1
+        assert info_after_miss.hits == info_before.hits
+
+        # Second call with identical arguments should be a cache hit
+        p.predict("web-development", "01003", 4.5)
+        info_after_hit = _cached_predict.cache_info()
+        assert info_after_hit.hits == info_after_miss.hits + 1
+        assert info_after_hit.misses == info_after_miss.misses
+
+    def test_cache_invalidation_on_train(self, monkeypatch):
+        from app.models.price_predictor import _cached_predict
+        import numpy as np
+        
+        # Mock joblib.dump and MODEL_PATH to avoid mutating disk/file system in test
+        monkeypatch.setattr("app.models.price_predictor.joblib.dump", lambda *args, **kwargs: None)
+        
+        p = PricePredictor.get()
+        _cached_predict.cache_clear()
+        
+        # Populate the cache
+        p.predict("web-development", "01003", 4.5)
+        assert _cached_predict.cache_info().currsize == 1
+        
+        # Train model with dummy inputs, which should trigger cache invalidation
+        X = np.array([[0, 0, 4.5], [0, 0, 3.5]])
+        y = np.array([100.0, 80.0])
+        p.category_enc.fit(["web-development"])
+        p.location_enc.fit(["01003"])
+        p.train(X, y)
+        
+        # Cache should be cleared/empty after retraining
+        assert _cached_predict.cache_info().currsize == 0
+

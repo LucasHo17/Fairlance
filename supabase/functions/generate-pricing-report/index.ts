@@ -1,6 +1,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/supabase.ts";
+import { Redis } from "npm:@upstash/redis";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,6 +9,12 @@ const supabase = createClient(
 );
 
 const ML_SERVICE_URL = Deno.env.get("ML_SERVICE_URL");
+
+const redisUrl = Deno.env.get("UPSTASH_REDIS_REST_URL");
+const redisToken = Deno.env.get("UPSTASH_REDIS_REST_TOKEN");
+const redis = redisUrl && redisToken
+  ? new Redis({ url: redisUrl, token: redisToken })
+  : null;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -23,6 +30,27 @@ Deno.serve(async (req: Request) => {
     location?: string;
     rating?: number;
   };
+
+  // ── Upstash Cache Check (Cache-Aside Tier 2) ────────────────
+  const cacheKey = `pricing-report:${category_id}:${location}:${rating}`;
+  let cachedReport = null;
+  if (category_id && redis) {
+    try {
+      cachedReport = await redis.get(cacheKey);
+    } catch (err) {
+      console.error("Redis cache read error:", err);
+    }
+  }
+
+  if (cachedReport) {
+    return new Response(JSON.stringify(cachedReport), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "X-Cache": "HIT",
+      },
+    });
+  }
 
   // When category_id is omitted, return market-wide price distribution only.
   if (!category_id) {
@@ -174,7 +202,19 @@ Deno.serve(async (req: Request) => {
     anomalies,
   };
 
+  if (redis) {
+    try {
+      await redis.set(cacheKey, report, { ex: 3600 }); // Cache for 1 hour
+    } catch (err) {
+      console.error("Redis cache write error:", err);
+    }
+  }
+
   return new Response(JSON.stringify(report), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "X-Cache": "MISS",
+    },
   });
 });
