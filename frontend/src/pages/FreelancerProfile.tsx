@@ -163,13 +163,21 @@ export const FreelancerProfile = () => {
         const profileReviews = await repo.getByListing(id);
         setReviews(profileReviews);
 
+        const categorySlug = item.categories?.slug || '';
+        let mappedCategory = 'design';
+        if (categorySlug.includes('dev') || categorySlug.includes('code') || categorySlug.includes('software')) {
+          mappedCategory = 'development';
+        } else if (categorySlug.includes('writ') || categorySlug.includes('edit')) {
+          mappedCategory = 'writing';
+        }
+
         const colors = ['bg-vibrant-coral', 'bg-rosy-copper', 'bg-white'];
         const mappedListing: Listing = {
           id: item.id,
           name: item.title || item.categories?.name || 'Untitled Service',
           freelancerName: item.users?.full_name || item.users?.business_name || 'Unknown Talent',
           role: item.categories?.name || 'Freelancer',
-          category: item.categories?.name || item.category_id || 'general',
+          category: mappedCategory,
           price: item.pricing_models?.[0]?.base_price || 0,
           rating: ratingData?.avg_overall ?? 0,
           reviews: ratingData?.review_count ?? 0,
@@ -212,14 +220,23 @@ export const FreelancerProfile = () => {
         const mockReport = getPricingReport(mappedListing);
 
         try {
-          const { data: reportData, error: reportError } = await supabase.functions.invoke('generate-pricing-report', {
-            method: 'POST',
-            body: {
-              category_id: item.category_id,
+          let reportData;
+          if (user instanceof CustomerUser) {
+            reportData = await user.viewReport(item.category_id, {
               location: item.users?.service_area || '',
               rating: ratingData?.avg_overall ?? 4.5,
-            },
-          });
+            });
+          } else {
+            const { data } = await supabase.functions.invoke('generate-pricing-report', {
+              method: 'POST',
+              body: {
+                category_id: item.category_id,
+                location: item.users?.service_area || '',
+                rating: ratingData?.avg_overall ?? 4.5,
+              },
+            });
+            reportData = data;
+          }
 
           if (reportData && !reportData.error) {
             const scatterBase = (reportData.scatterData?.length > 0 ? reportData.scatterData : mockReport.scatterData)
@@ -227,7 +244,7 @@ export const FreelancerProfile = () => {
             const hasCurrentFreelancer = scatterBase.some((p: any) => p.isCurrent);
             if (!hasCurrentFreelancer) {
               scatterBase.push({
-                name: mappedListing.name,
+                name: mappedListing.freelancerName || 'Freelancer',
                 price: mappedListing.price,
                 rating: mappedListing.rating,
                 reviews: mappedListing.reviews,
