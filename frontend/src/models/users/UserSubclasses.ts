@@ -142,9 +142,14 @@ export class CustomerUser extends BaseUser {
   }
 
   // Calls the generate-pricing-report Edge Function.
-  async viewReport(categoryId: string) {
+  async viewReport(categoryId: string, context?: { location?: string; rating?: number }) {
     const { data, error } = await supabase.functions.invoke('generate-pricing-report', {
-      body: { category_id: categoryId },
+      method: 'POST',
+      body: {
+        category_id: categoryId,
+        location: context?.location || '',
+        rating: context?.rating ?? 4.5,
+      },
     });
     if (error) throw error;
     return data;
