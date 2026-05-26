@@ -137,7 +137,7 @@ export const PricingReportModal = ({ report, listing, onClose }: PricingReportMo
                 </div>
                 <div>
                   <div className="font-display uppercase text-xl tracking-tighter leading-tight">
-                    {listing.name.split(' ')[0]} charges{' '}
+                    {(listing.freelancerName || listing.name).split(' ')[0]} charges{' '}
                     {isAt
                       ? 'exactly the market average'
                       : `${diffPct}% ${isAbove ? 'above' : 'below'} the market average`}

@@ -84,11 +84,19 @@ Deno.serve(async (req: Request) => {
 
   if (ML_SERVICE_URL) {
     try {
+      const { data: categoryRow } = await supabase
+        .from("categories")
+        .select("slug")
+        .eq("id", category_id)
+        .maybeSingle();
+
+      const categorySlug = categoryRow?.slug || "";
+
       const [predRes, anomalyRes] = await Promise.all([
         fetch(`${ML_SERVICE_URL}/predict-price`, {
           method: "POST",
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify({ category: category_id, location, rating }),
+          body: JSON.stringify({ category: categorySlug || category_id, location, rating }),
         }),
         prices.length > 0
           ? fetch(`${ML_SERVICE_URL}/detect-anomalies`, {
