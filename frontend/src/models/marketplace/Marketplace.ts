@@ -116,6 +116,8 @@ export class Offer {
   proposedBy: 'customer' | 'freelancer';
   expiresAt: string | null;
   createdAt: string;
+  // Optional denormalized fields populated by enriched queries
+  customerName?: string;
 
   constructor(data: {
     id: string;
@@ -128,6 +130,7 @@ export class Offer {
     proposedBy: 'customer' | 'freelancer';
     expiresAt: string | null;
     createdAt: string;
+    customerName?: string;
   }) {
     this.id           = data.id;
     this.customerId   = data.customerId;
@@ -139,6 +142,7 @@ export class Offer {
     this.proposedBy   = data.proposedBy;
     this.expiresAt    = data.expiresAt;
     this.createdAt    = data.createdAt;
+    this.customerName = data.customerName;
   }
 
   // Accepts the offer via Edge Function (atomic: updates status + creates transaction).
@@ -178,6 +182,7 @@ export class Offer {
   }
 
   static fromRow(row: Record<string, unknown>): Offer {
+    const customerObj = row.customer as Record<string, unknown> | undefined;
     return new Offer({
       id:           row.id as string,
       customerId:   row.customer_id as string,
@@ -189,6 +194,7 @@ export class Offer {
       proposedBy:   (row.proposed_by as 'customer' | 'freelancer') || 'customer',
       expiresAt:    (row.expires_at as string) ?? null,
       createdAt:    row.created_at as string,
+      customerName: (customerObj?.full_name as string) ?? (row.customer_name as string) ?? undefined,
     });
   }
 }

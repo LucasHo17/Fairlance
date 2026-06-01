@@ -82,6 +82,19 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Send notification to the freelancer
+  try {
+    await serviceClient.functions.invoke("notify", {
+      body: {
+        user_id: updated.freelancer_id,
+        event_type: "transaction_completed",
+        payload: { transaction_id }
+      }
+    });
+  } catch (notifErr) {
+    console.error("Failed to send transaction completion notification:", notifErr);
+  }
+
   // ── Trigger ML Retraining on 50-Transaction Batches (Option C) ──
   try {
     const { count, error: countError } = await serviceClient

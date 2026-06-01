@@ -172,7 +172,7 @@ export class OfferRepository {
   async findByFreelancer(freelancerId: string): Promise<Offer[]> {
     const { data, error } = await supabase
       .from('offers')
-      .select('*')
+      .select('*, customer:users!offers_customer_id_fkey(full_name)')
       .eq('freelancer_id', freelancerId)
       .order('created_at', { ascending: false });
     if (error) throw error;

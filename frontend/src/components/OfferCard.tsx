@@ -60,7 +60,9 @@ export const OfferCard = ({
             {offer.scope ?? 'No scope provided'} · {new Date(offer.createdAt).toLocaleDateString()}
           </div>
           <div className="font-mono text-[10px] uppercase opacity-50 mt-1">
-            Proposed by: {offer.proposedBy === 'customer' ? 'Customer' : 'Freelancer'}
+            Proposed by: {offer.proposedBy === 'customer'
+              ? (offer.customerName ? `${offer.customerName} (Customer)` : 'Customer')
+              : 'Freelancer'}
           </div>
           {offer.expiresAt && (
             <div className="font-mono text-[10px] uppercase text-vibrant-coral mt-1">

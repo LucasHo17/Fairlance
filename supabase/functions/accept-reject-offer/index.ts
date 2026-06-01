@@ -1,11 +1,4 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { createUserClient, corsHeaders } from "../_shared/supabase.ts";
-
-const serviceClient = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+import { createUserClient, createServiceClient, corsHeaders } from "../_shared/supabase.ts";
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight request
@@ -28,6 +21,8 @@ Deno.serve(async (req: Request) => {
   if (authError || !user) return new Response("Unauthorized", { status: 401, headers: corsHeaders });
 
   const { offer_id, action } = await req.json() as { offer_id: string; action: "accept" | "reject" };
+
+  const serviceClient = createServiceClient();
 
   if (!offer_id || !["accept", "reject"].includes(action)) {
     return new Response(JSON.stringify({ error: "offer_id and action (accept|reject) are required" }), {
