@@ -1,4 +1,3 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
 import { createUserClient, createServiceClient, corsHeaders } from "../_shared/supabase.ts";
 
 Deno.serve(async (req: Request) => {
@@ -81,6 +80,27 @@ Deno.serve(async (req: Request) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // ── Trigger ML Retraining on 50-Transaction Batches (Option C) ──
+  try {
+    const { count, error: countError } = await serviceClient
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .not("completed_at", "is", null);
+
+    if (!countError && count && count % 50 === 0) {
+      const ML_SERVICE_URL = Deno.env.get("ML_SERVICE_URL");
+      if (ML_SERVICE_URL) {
+        console.log(`Completed transaction threshold hit (${count}). Triggering ML retraining...`);
+        fetch(`${ML_SERVICE_URL}/predict-price/train`, { method: "POST" })
+          .then((res) => res.json())
+          .then((data) => console.log("Retraining successfully queued:", data))
+          .catch((err) => console.error("Failed to queue ML retraining:", err));
+      }
+    }
+  } catch (triggerErr) {
+    console.error("Failed to check ML retraining trigger:", triggerErr);
   }
 
   return new Response(

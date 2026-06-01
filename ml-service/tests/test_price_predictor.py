@@ -157,3 +157,46 @@ class TestCaching:
         # Cache should be cleared/empty after retraining
         assert _cached_predict.cache_info().currsize == 0
 
+
+class TestAutoReload:
+    def test_predictor_auto_reloads_when_file_mtime_changes(self, tmp_path, monkeypatch):
+        import time
+        from app.models.price_predictor import PricePredictor, MODEL_PATH
+        import joblib
+        
+        # Setup a temporary model path
+        test_model_file = tmp_path / "price_predictor.pkl"
+        monkeypatch.setattr("app.models.price_predictor.MODEL_PATH", test_model_file)
+        
+        # Save a mock model
+        from sklearn.ensemble import GradientBoostingRegressor
+        from sklearn.preprocessing import LabelEncoder
+        
+        model = GradientBoostingRegressor()
+        import numpy as np
+        X_dummy = np.array([[0, 0, 4.0]])
+        y_dummy = np.array([50.0])
+        model.fit(X_dummy, y_dummy)
+        
+        cat_enc = LabelEncoder().fit(["web-development"])
+        loc_enc = LabelEncoder().fit(["01003"])
+        
+        joblib.dump({"model": model, "category_enc": cat_enc, "location_enc": loc_enc}, test_model_file)
+        
+        # Initialize predictor
+        p = PricePredictor()
+        initial_load_time = p.last_loaded_time
+        assert initial_load_time > 0
+        
+        # Sleep briefly to ensure modification time difference
+        time.sleep(0.1)
+        
+        # Overwrite file to simulate background worker updating it
+        joblib.dump({"model": model, "category_enc": cat_enc, "location_enc": loc_enc}, test_model_file)
+        
+        # Trigger prediction, which should trigger auto-reloading
+        p.predict("web-development", "01003", 4.0)
+        
+        assert p.last_loaded_time > initial_load_time
+
+
