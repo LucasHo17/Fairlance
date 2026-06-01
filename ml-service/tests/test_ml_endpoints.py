@@ -243,3 +243,47 @@ def test_integration_all_endpoints_with_errors():
     body = r.json()
     assert body["match"] is False
     assert 0.0 <= body["confidence"] <= 1.0
+
+
+# ── /predict-price/train & /status ───────────────────────────
+
+def test_trigger_training_endpoint(monkeypatch):
+    class DummyJob:
+        id = "dummy-job-123"
+    
+    monkeypatch.setattr("app.queue.queue.enqueue", lambda task: DummyJob())
+    
+    r = client.post("/predict-price/train")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "queued"
+    assert body["job_id"] == "dummy-job-123"
+
+
+def test_get_training_status_endpoint(monkeypatch):
+    class DummyJob:
+        id = "dummy-job-123"
+        ended_at = None
+        is_finished = False
+        def get_status(self):
+            return "started"
+    
+    monkeypatch.setattr("rq.job.Job.fetch", lambda job_id, connection: DummyJob())
+    
+    r = client.get("/predict-price/train/status/dummy-job-123")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["job_id"] == "dummy-job-123"
+    assert body["status"] == "started"
+    assert body["result"] is None
+
+
+def test_get_training_status_not_found(monkeypatch):
+    def mock_fetch_raise(*args, **kwargs):
+        raise Exception("Not Found")
+        
+    monkeypatch.setattr("rq.job.Job.fetch", mock_fetch_raise)
+    
+    r = client.get("/predict-price/train/status/invalid-job")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Job not found"

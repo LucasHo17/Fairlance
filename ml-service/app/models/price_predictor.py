@@ -17,7 +17,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import LabelEncoder
 
@@ -47,6 +47,7 @@ class PricePredictor:
         self.model: GradientBoostingRegressor | None = None
         self.category_enc = LabelEncoder()
         self.location_enc = LabelEncoder()
+        self.last_loaded_time = 0.0
         self._load()
 
     # Singleton accessor
@@ -58,10 +59,12 @@ class PricePredictor:
 
     def _load(self):
         if MODEL_PATH.exists():
+            mtime = MODEL_PATH.stat().st_mtime
             saved = joblib.load(MODEL_PATH)
             self.model        = saved["model"]
             self.category_enc = saved["category_enc"]
             self.location_enc = saved["location_enc"]
+            self.last_loaded_time = mtime
             # Invalidate prediction cache on reload
             _cached_predict.cache_clear()
 
@@ -94,6 +97,10 @@ class PricePredictor:
         )
 
     def predict(self, category: str, location: str, rating: float) -> PricePredictResponse:
+        if MODEL_PATH.exists():
+            mtime = MODEL_PATH.stat().st_mtime
+            if mtime > self.last_loaded_time:
+                self._load()
         return _cached_predict(category, location, rating)
 
     def _predict_uncached(self, category: str, location: str, rating: float) -> PricePredictResponse:
@@ -145,6 +152,36 @@ def predict_price(req: PricePredictRequest) -> PricePredictResponse:
 @router.get("/predict-price/health")
 def health() -> dict:
     return {"status": "ok", "model_loaded": PricePredictor.get().model is not None}
+
+
+@router.post("/predict-price/train")
+def trigger_training() -> dict:
+    from app.queue import queue
+    from app.tasks import train_model_task
+
+    try:
+        job = queue.enqueue(train_model_task)
+        return {"status": "queued", "job_id": job.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enqueue training job: {str(e)}")
+
+
+@router.get("/predict-price/train/status/{job_id}")
+def get_training_status(job_id: str) -> dict:
+    from rq.job import Job
+    from app.queue import redis_conn
+
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "job_id": job.id,
+        "status": job.get_status(),
+        "result": job.result if job.is_finished else None,
+        "ended_at": job.ended_at,
+    }
 
 
 # ── CLI training entrypoint ──────────────────────────────────
