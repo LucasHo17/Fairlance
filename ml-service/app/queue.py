@@ -4,8 +4,8 @@ from rq import Queue
 
 redis_url = os.getenv("REDIS_URL")
 if not redis_url:
-    rest_url = os.getenv("UPSTASH_REDIS_REST_URL", "")
-    rest_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+    rest_url = os.getenv("UPSTASH_REDIS_REST_URL", "").strip('"').strip("'")
+    rest_token = os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip('"').strip("'")
     if rest_url and rest_token:
         # Extract host (e.g. fresh-leech-137039.upstash.io)
         host = rest_url.replace("https://", "").replace("http://", "")
