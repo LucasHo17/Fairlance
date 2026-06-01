@@ -1,11 +1,4 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/supabase.ts";
-
-const serviceClient = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+import { createServiceClient, corsHeaders } from "../_shared/supabase.ts";
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight request
@@ -18,6 +11,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const serviceClient = createServiceClient();
     const body = await req.json();
     const { user_id, event_type, payload } = body;
 

@@ -36,6 +36,8 @@ const getNotificationIcon = (type: string) => {
       return <Star className="text-vibrant-coral fill-current shrink-0" size={16} />;
     case 'offer_expiring':
       return <Clock className="text-rosy-copper shrink-0" size={16} />;
+    case 'transaction_completed':
+      return <CheckCircle2 className="text-shadow-grey shrink-0" size={16} />;
     default:
       return <Inbox className="text-black/50 shrink-0" size={16} />;
   }

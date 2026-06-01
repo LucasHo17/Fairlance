@@ -922,7 +922,7 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
           .order('created_at', { ascending: false }),
         supabase
           .from('offers')
-          .select('*')
+          .select('*, customer:users!offers_customer_id_fkey(full_name)')
           .eq('freelancer_id', freelancerId)
           .eq('status', 'pending')
           .order('created_at', { ascending: false }),
@@ -970,16 +970,42 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
           if (payload.eventType === 'INSERT') {
             const newOffer = Offer.fromRow(payload.new);
             if (newOffer.status === 'pending') {
-              setOffers((prev) => [newOffer, ...prev]);
+              // Fetch the customer's full_name to display it
+              supabase
+                .from('users')
+                .select('full_name')
+                .eq('id', newOffer.customerId)
+                .single()
+                .then(({ data }) => {
+                  if (data?.full_name) {
+                    newOffer.customerName = data.full_name;
+                  }
+                  setOffers((prev) => [newOffer, ...prev]);
+                });
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedOffer = Offer.fromRow(payload.new);
             setOffers((prev) => {
+              const exists = prev.find((o) => o.id === updatedOffer.id);
+              if (exists) {
+                updatedOffer.customerName = exists.customerName;
+              }
               if (updatedOffer.status === 'pending') {
-                const exists = prev.find((o) => o.id === updatedOffer.id);
                 if (exists) {
                   return prev.map((o) => (o.id === updatedOffer.id ? updatedOffer : o));
                 } else {
+                  // If we didn't have it in state before, fetch its customerName
+                  supabase
+                    .from('users')
+                    .select('full_name')
+                    .eq('id', updatedOffer.customerId)
+                    .single()
+                    .then(({ data }) => {
+                      if (data?.full_name) {
+                        updatedOffer.customerName = data.full_name;
+                      }
+                      setOffers((current) => current.map((o) => o.id === updatedOffer.id ? updatedOffer : o));
+                    });
                   return [updatedOffer, ...prev];
                 }
               } else {

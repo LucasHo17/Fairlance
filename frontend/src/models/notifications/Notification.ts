@@ -4,7 +4,8 @@ export type NotificationEventType =
   | 'offer_rejected'
   | 'new_message'
   | 'review_posted'
-  | 'offer_expiring';
+  | 'offer_expiring'
+  | 'transaction_completed';
 
 export class Notification {
   id: string;
@@ -55,6 +56,8 @@ export class Notification {
         return 'A client has posted a review for your completed work!';
       case 'offer_expiring':
         return 'A pending offer is expiring soon. Click to review it.';
+      case 'transaction_completed':
+        return 'Your transaction has been marked as complete!';
       default:
         return 'You have a new update.';
     }
@@ -72,6 +75,8 @@ export class Notification {
         return '/messages';
       case 'review_posted':
         return '/dashboard';
+      case 'transaction_completed':
+        return '/transactions';
       default:
         return '/';
     }
