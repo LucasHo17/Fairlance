@@ -214,6 +214,13 @@ export const NotificationService = {
       await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'offer_expiring', payload: { offer_id: offerId } } });
     }
   },
+
+  async notifyTransactionCompleted(transactionId: string, targetUserId?: string) {
+    console.info('[NotificationService] transaction completed:', transactionId);
+    if (targetUserId) {
+      await supabase.functions.invoke('notify', { body: { user_id: targetUserId, event_type: 'transaction_completed', payload: { transaction_id: transactionId } } });
+    }
+  },
 };
 
 // ── AdminCascadePolicy ───────────────────────────────────────

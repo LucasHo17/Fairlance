@@ -12,6 +12,7 @@ import { Offer, Transaction } from '../models/marketplace/Marketplace';
 import { cn } from '../lib/utils';
 import { OfferCard } from '../components/OfferCard';
 import { ReceiptText } from 'lucide-react';
+import { NotificationService } from '../services/repositories/CoreServices';
 
 export const UserProfile = ({ user, onLogout, onGoToDashboard, onRoleChange, onViewTransactions }: UserProfileProps) => {
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -75,9 +76,13 @@ export const UserProfile = ({ user, onLogout, onGoToDashboard, onRoleChange, onV
 
   const handleAccept = async (offer: Offer) => {
     try {
-      await offer.accept();
-      // Remove from pending offers since it's now active/completed
+      const result = await offer.accept();
       setOfferHistory(prev => prev.filter(o => o.id !== offer.id));
+      try {
+        await NotificationService.notifyOfferAccepted(offer.id, result?.other_user_id);
+      } catch (notifyErr) {
+        console.error('Failed to send accept notification:', notifyErr);
+      }
     } catch (e: any) { 
       console.error(e); 
       setError(e.message || 'Failed to accept offer');
@@ -86,9 +91,13 @@ export const UserProfile = ({ user, onLogout, onGoToDashboard, onRoleChange, onV
 
   const handleReject = async (offer: Offer) => {
     try {
-      await offer.reject();
-      // Remove from pending offers
+      const result = await offer.reject();
       setOfferHistory(prev => prev.filter(o => o.id !== offer.id));
+      try {
+        await NotificationService.notifyOfferRejected(offer.id, result?.other_user_id);
+      } catch (notifyErr) {
+        console.error('Failed to send reject notification:', notifyErr);
+      }
     } catch (e: any) { 
       console.error(e); 
       setError(e.message || 'Failed to reject offer');
