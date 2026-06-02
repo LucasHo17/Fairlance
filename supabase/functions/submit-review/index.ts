@@ -1,4 +1,4 @@
-import { createUserClient, createServiceClient, corsHeaders } from "../_shared/supabase.ts";
+import { createUserClient, corsHeaders } from "../_shared/supabase.ts";
 
 // Simple profanity list — expand as needed.
 const BANNED_WORDS = ["spam", "scam"];
@@ -95,26 +95,6 @@ Deno.serve(async (req: Request) => {
     }
     return new Response(JSON.stringify({ error: reviewError.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  // Send notification to the freelancer
-  const serviceClient = createServiceClient();
-
-  // We need to fetch the freelancer_id to send the notification
-  const { data: offerData } = await serviceClient
-    .from("offers")
-    .select("freelancer_id")
-    .eq("id", tx.offer_id)
-    .single();
-
-  if (offerData?.freelancer_id) {
-    await serviceClient.functions.invoke("notify", {
-      body: {
-        user_id: offerData.freelancer_id,
-        event_type: "review_posted",
-        payload: { transaction_id, review_id: review.id }
-      }
     });
   }
 

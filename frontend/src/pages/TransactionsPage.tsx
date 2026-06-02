@@ -12,6 +12,7 @@ import {
 import { Transaction } from '../models/marketplace/Marketplace';
 import { TransactionRepository } from '../services/repositories/Repositories';
 import { CustomerUser } from '../models/users/UserSubclasses';
+import { NotificationService } from '../services/repositories/CoreServices';
 import { cn } from '../lib/utils';
 
 interface TransactionsPageProps {
@@ -308,6 +309,12 @@ export const TransactionsPage = ({ user, onBack }: TransactionsPageProps) => {
     setTransactions(prev =>
       prev.map(t => t.id === tx.id ? tx : t)
     );
+    // Notify the freelancer that the job is done.
+    try {
+      await NotificationService.notifyTransactionCompleted(tx.id, tx.freelancerId);
+    } catch (notifyErr) {
+      console.error('Failed to send transaction completion notification:', notifyErr);
+    }
   };
 
   const handleReviewSubmit = () => {
@@ -315,6 +322,9 @@ export const TransactionsPage = ({ user, onBack }: TransactionsPageProps) => {
       setTransactions(prev =>
         prev.map(t => t.id === reviewingTx.id ? Object.assign(Object.create(Object.getPrototypeOf(t)), t, { hasReview: true }) : t)
       );
+      // Notify the freelancer that a review was posted.
+      NotificationService.notifyReviewPosted(reviewingTx.id, reviewingTx.freelancerId)
+        .catch(err => console.error('Failed to send review notification:', err));
     }
     setReviewingTx(null);
   };

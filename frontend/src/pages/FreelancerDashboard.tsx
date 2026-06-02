@@ -7,7 +7,7 @@ import { ServiceListing, Offer } from '../models/marketplace/Marketplace';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { cn } from '../lib/utils';
 import { OfferCard } from '../components/OfferCard';
-import { mlServiceClient } from '../services/repositories/CoreServices';
+import { mlServiceClient, NotificationService } from '../services/repositories/CoreServices';
 import { PricingReportModal } from '../components/PricingReportModal';
 import { getPricingReport } from '../data/mockData';
 
@@ -1043,15 +1043,25 @@ export const FreelancerDashboard = ({ user, onLogout, onSwitchToClient, onViewTr
 
   const handleAccept = async (offer: Offer) => {
     try {
-      await offer.accept();
+      const result = await offer.accept();
       setOffers(prev => prev.filter(o => o.id !== offer.id));
+      try {
+        await NotificationService.notifyOfferAccepted(offer.id, result?.other_user_id);
+      } catch (notifyErr) {
+        console.error('Failed to send accept notification:', notifyErr);
+      }
     } catch (e) { console.error(e); }
   };
 
   const handleReject = async (offer: Offer) => {
     try {
-      await offer.reject();
+      const result = await offer.reject();
       setOffers(prev => prev.filter(o => o.id !== offer.id));
+      try {
+        await NotificationService.notifyOfferRejected(offer.id, result?.other_user_id);
+      } catch (notifyErr) {
+        console.error('Failed to send reject notification:', notifyErr);
+      }
     } catch (e) { console.error(e); }
   };
 
