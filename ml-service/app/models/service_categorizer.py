@@ -7,11 +7,13 @@ and the category name, then computes cosine similarity. A threshold of
 """
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter
 from sentence_transformers import SentenceTransformer, util
 
 from app.schemas.category_schemas import CategorizationRequest, CategorizationResponse
 
+logger = logging.getLogger("app.service_categorizer")
 router = APIRouter(tags=["categories"])
 
 # Readable category names for better embedding quality.
@@ -69,7 +71,19 @@ _categorizer = ServiceCategorizer()
 
 @router.post("/categorize-service", response_model=CategorizationResponse)
 def categorize_service(req: CategorizationRequest) -> CategorizationResponse:
-    return _categorizer.categorize(req.description, req.claimedCategory)
+    from app.core.metrics import SERVICE_CATEGORIZATIONS
+    try:
+        res = _categorizer.categorize(req.description, req.claimedCategory)
+        match_str = "match" if res.match else "mismatch"
+        SERVICE_CATEGORIZATIONS.labels(claimed_category=req.claimedCategory, match=match_str).inc()
+        logger.info(
+            f"Service categorization finished for category {req.claimedCategory} (result: {match_str}, confidence: {res.confidence})",
+            extra={"claimed_category": req.claimedCategory, "match": res.match, "confidence": res.confidence}
+        )
+        return res
+    except Exception as e:
+        logger.error(f"Service categorization failed: {str(e)}", exc_info=True)
+        raise
 
 
 @router.get("/categorize-service/health")
