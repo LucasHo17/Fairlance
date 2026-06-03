@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 from functools import lru_cache
+import logging
 import os
 from pathlib import Path
+import time
 
 import joblib
 import numpy as np
@@ -22,6 +24,8 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import LabelEncoder
 
 from app.schemas.price_schemas import PricePredictRequest, PricePredictResponse
+
+logger = logging.getLogger("app.price_predictor")
 
 MODEL_PATH = Path(__file__).parent.parent / "trained_models" / "price_predictor.pkl"
 
@@ -67,6 +71,9 @@ class PricePredictor:
             self.last_loaded_time = mtime
             # Invalidate prediction cache on reload
             _cached_predict.cache_clear()
+            logger.info(f"Loaded trained price predictor model (mtime: {mtime})")
+        else:
+            logger.warning("No trained price predictor model found on disk. Falling back to heuristics.")
 
     def _heuristic(self, category: str, rating: float) -> PricePredictResponse:
         """Fallback when no model is trained yet."""
@@ -126,15 +133,29 @@ class PricePredictor:
         )
 
     def train(self, X: np.ndarray, y: np.ndarray):
-        self.model = GradientBoostingRegressor(n_estimators=200, max_depth=4, random_state=42)
-        self.model.fit(X, y)
-        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(
-            {"model": self.model, "category_enc": self.category_enc, "location_enc": self.location_enc},
-            MODEL_PATH,
-        )
-        # Invalidate prediction cache on retraining
-        _cached_predict.cache_clear()
+        from app.core.metrics import MODEL_TRAINING_DURATION, DATA_SAMPLES_TRAINED, MODEL_TRAINING_RUNS
+        start_time = time.time()
+        logger.info(f"Starting model retraining on {len(y)} transaction samples...")
+        try:
+            self.model = GradientBoostingRegressor(n_estimators=200, max_depth=4, random_state=42)
+            self.model.fit(X, y)
+            MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            joblib.dump(
+                {"model": self.model, "category_enc": self.category_enc, "location_enc": self.location_enc},
+                MODEL_PATH,
+            )
+            # Invalidate prediction cache on retraining
+            _cached_predict.cache_clear()
+            
+            duration = time.time() - start_time
+            MODEL_TRAINING_DURATION.set(duration)
+            DATA_SAMPLES_TRAINED.set(len(y))
+            MODEL_TRAINING_RUNS.labels(status="success").inc()
+            logger.info(f"Model retraining completed successfully in {duration:.2f}s on {len(y)} samples.")
+        except Exception as e:
+            MODEL_TRAINING_RUNS.labels(status="error").inc()
+            logger.error(f"Model retraining failed: {str(e)}", exc_info=True)
+            raise
 
 
 @lru_cache(maxsize=1024)
@@ -146,7 +167,16 @@ def _cached_predict(category: str, location: str, rating: float) -> PricePredict
 
 @router.post("/predict-price", response_model=PricePredictResponse)
 def predict_price(req: PricePredictRequest) -> PricePredictResponse:
-    return PricePredictor.get().predict(req.category, req.location, req.rating)
+    from app.core.metrics import PREDICTION_REQUESTS
+    try:
+        res = PricePredictor.get().predict(req.category, req.location, req.rating)
+        PREDICTION_REQUESTS.labels(category=req.category, status="success").inc()
+        logger.info(f"Price prediction succeeded for category {req.category}", extra={"category": req.category, "rating": req.rating})
+        return res
+    except Exception as e:
+        PREDICTION_REQUESTS.labels(category=req.category, status="error").inc()
+        logger.error(f"Price prediction failed for category {req.category}: {str(e)}", exc_info=True, extra={"category": req.category})
+        raise
 
 
 @router.get("/predict-price/health")
@@ -159,10 +189,13 @@ def trigger_training() -> dict:
     from app.queue import queue
     from app.tasks import train_model_task
 
+    logger.info("Retraining trigger requested.")
     try:
         job = queue.enqueue(train_model_task)
+        logger.info(f"Retraining job enqueued successfully with ID: {job.id}")
         return {"status": "queued", "job_id": job.id}
     except Exception as e:
+        logger.error(f"Failed to enqueue retraining job: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to enqueue training job: {str(e)}")
 
 
@@ -173,7 +206,9 @@ def get_training_status(job_id: str) -> dict:
 
     try:
         job = Job.fetch(job_id, connection=redis_conn)
+        logger.info(f"Fetched training job status for ID: {job_id} (status: {job.get_status()})")
     except Exception:
+        logger.warning(f"Training job status fetch failed: Job {job_id} not found")
         raise HTTPException(status_code=404, detail="Job not found")
 
     return {
@@ -189,6 +224,8 @@ def get_training_status(job_id: str) -> dict:
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+    from app.core.logging import setup_logging
+    setup_logging()
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", action="store_true")
@@ -201,4 +238,4 @@ if __name__ == "__main__":
         predictor.category_enc.fit(category_labels)
         predictor.location_enc.fit(location_labels)
         predictor.train(X, y)
-        print(f"Model trained on {len(y)} samples and saved to {MODEL_PATH}")
+        logger.info(f"CLI training complete. Model saved to {MODEL_PATH}")
