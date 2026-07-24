@@ -221,7 +221,7 @@ deno test supabase/functions/submit-review/index.test.ts --allow-net --allow-env
 | Function | Test cases |
 |---|---|
 | `generate-pricing-report` | Happy path report shape, field ordering (min ≤ median ≤ max), missing `category_id`, non-existent category, optional params, wrong HTTP method |
-| `accept-reject-offer` | Freelancer accept (+ transaction created), freelancer reject, customer forbidden, missing fields, invalid action, non-existent offer, double-accept (409), double-reject (409), wrong HTTP method |
+| `accept-reject-offer` | Participant accept/reject, own-proposal forbidden, missing fields, invalid action, non-existent offer, idempotent retries, 50 concurrent accepts creating exactly one transaction, accept-vs-reject consistency, wrong HTTP method |
 | `submit-review` | Happy path, duplicate review (409), rating out of range (low + high), profanity in body, incomplete transaction (409), cross-customer forbidden, non-existent transaction, missing fields, wrong HTTP method |
 
 
@@ -272,4 +272,3 @@ The frontend subscribes to these tables filtered by `conversation_id` or `freela
 3. Regenerate frontend types: `npx supabase gen types typescript --project-id your-ref > ../frontend/src/types/database.types.ts`
 4. Push to cloud: `supabase db push`
 5. Redeploy any affected Edge Functions
-
