@@ -10,3 +10,4 @@ ml-service/app/trained_models/*.pkl
 .DS_Store
 ml-service/.DS_Store
 supabase/.DS_Store
+benchmarks/edge-upstash.env
