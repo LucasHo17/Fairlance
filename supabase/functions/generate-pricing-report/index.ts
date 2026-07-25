@@ -1,20 +1,87 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { corsHeaders } from "../_shared/supabase.ts";
 import { Redis } from "npm:@upstash/redis";
+import {
+  corsHeaders,
+  createServiceClient,
+} from "../_shared/supabase.ts";
 
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+const supabase = createServiceClient();
 
 const ML_SERVICE_URL = Deno.env.get("ML_SERVICE_URL");
+const ML_TIMEOUT_MS = positiveIntegerEnv("ML_TIMEOUT_MS", 3_000);
+const REDIS_TIMEOUT_MS = positiveIntegerEnv("REDIS_TIMEOUT_MS", 500);
 
 const redisUrl = Deno.env.get("UPSTASH_REDIS_REST_URL");
 const redisToken = Deno.env.get("UPSTASH_REDIS_REST_TOKEN");
 const redis = redisUrl && redisToken
   ? new Redis({ url: redisUrl, token: redisToken })
   : null;
+
+type Prediction = {
+  minPrice: number;
+  maxPrice: number;
+  suggestedPrice: number;
+};
+
+type DependencyStatus = "healthy" | "unavailable" | "timed_out" | "skipped";
+
+function positiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number(Deno.env.get(name));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  dependency: string,
+): Promise<T> {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${dependency} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  });
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function databasePrediction(aggregate: Record<string, unknown>): Prediction {
+  const marketMin = Number(aggregate.price_min);
+  const marketMax = Number(aggregate.price_max);
+  const marketMedian = Number(aggregate.price_median);
+  const marketAvg = Number(aggregate.price_avg);
+  const suggestedPrice = marketMedian > 0 ? marketMedian : marketAvg;
+
+  return {
+    minPrice: marketMin > 0 ? marketMin : suggestedPrice,
+    maxPrice: marketMax > 0 ? marketMax : suggestedPrice,
+    suggestedPrice,
+  };
+}
+
+function dependencyFailureStatus(error: unknown): DependencyStatus {
+  return error instanceof Error && error.name === "AbortError"
+    ? "timed_out"
+    : "unavailable";
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -36,7 +103,11 @@ Deno.serve(async (req: Request) => {
   let cachedReport = null;
   if (category_id && redis) {
     try {
-      cachedReport = await redis.get(cacheKey);
+      cachedReport = await withTimeout(
+        redis.get(cacheKey),
+        REDIS_TIMEOUT_MS,
+        "Redis read",
+      );
     } catch (err) {
       console.error("Redis cache read error:", err);
     }
@@ -48,6 +119,8 @@ Deno.serve(async (req: Request) => {
         ...corsHeaders,
         "Content-Type": "application/json",
         "X-Cache": "HIT",
+        "X-Prediction-Source":
+          String((cachedReport as Record<string, unknown>).predictionSource ?? "unknown"),
       },
     });
   }
@@ -107,38 +180,77 @@ Deno.serve(async (req: Request) => {
   const prices = (priceRows ?? []).map((r: { final_price: number }) => r.final_price);
 
   // 3. Call ML service (optional — skipped if ML_SERVICE_URL is not configured).
-  let prediction = { minPrice: 0, maxPrice: 0, suggestedPrice: 0 };
+  let prediction = databasePrediction(aggregate);
   let anomalies = { outlierIndices: [] as number[], scores: [] as number[] };
+  let predictionSource: "ml" | "database" = "database";
+  let predictionStatus: DependencyStatus = ML_SERVICE_URL
+    ? "unavailable"
+    : "skipped";
+  let anomalyStatus: DependencyStatus = prices.length > 0 && ML_SERVICE_URL
+    ? "unavailable"
+    : "skipped";
 
   if (ML_SERVICE_URL) {
-    try {
-      const { data: categoryRow } = await supabase
-        .from("categories")
-        .select("slug")
-        .eq("id", category_id)
-        .maybeSingle();
+    const { data: categoryRow } = await supabase
+      .from("categories")
+      .select("slug")
+      .eq("id", category_id)
+      .maybeSingle();
 
-      const categorySlug = categoryRow?.slug || "";
-
-      const [predRes, anomalyRes] = await Promise.all([
-        fetch(`${ML_SERVICE_URL}/predict-price`, {
+    const categorySlug = categoryRow?.slug || "";
+    const predictionRequest = fetchWithTimeout(
+      `${ML_SERVICE_URL}/predict-price`,
+      {
+        method: "POST",
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: categorySlug || category_id,
+          location,
+          rating,
+        }),
+      },
+      ML_TIMEOUT_MS,
+    );
+    const anomalyRequest = prices.length > 0
+      ? fetchWithTimeout(
+        `${ML_SERVICE_URL}/detect-anomalies`,
+        {
           method: "POST",
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify({ category: categorySlug || category_id, location, rating }),
-        }),
-        prices.length > 0
-          ? fetch(`${ML_SERVICE_URL}/detect-anomalies`, {
-              method: "POST",
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-              body: JSON.stringify({ prices }),
-            })
-          : Promise.resolve(null),
-      ]);
+          body: JSON.stringify({ prices }),
+        },
+        ML_TIMEOUT_MS,
+      )
+      : null;
 
-      if (predRes.ok) prediction = await predRes.json();
-      if (anomalyRes && anomalyRes.ok) anomalies = await anomalyRes.json();
-    } catch {
-      // ML service unavailable — continue with defaults
+    const [predictionResult, anomalyResult] = await Promise.allSettled([
+      predictionRequest,
+      anomalyRequest,
+    ]);
+
+    if (predictionResult.status === "fulfilled") {
+      if (predictionResult.value.ok) {
+        prediction = await predictionResult.value.json();
+        predictionSource = "ml";
+        predictionStatus = "healthy";
+      } else {
+        predictionStatus = "unavailable";
+      }
+    } else {
+      predictionStatus = dependencyFailureStatus(predictionResult.reason);
+    }
+
+    if (anomalyRequest === null) {
+      anomalyStatus = "skipped";
+    } else if (anomalyResult.status === "fulfilled") {
+      if (anomalyResult.value?.ok) {
+        anomalies = await anomalyResult.value.json();
+        anomalyStatus = "healthy";
+      } else {
+        anomalyStatus = "unavailable";
+      }
+    } else {
+      anomalyStatus = dependencyFailureStatus(anomalyResult.reason);
     }
   }
 
@@ -200,11 +312,20 @@ Deno.serve(async (req: Request) => {
     scatterData,
     prediction,
     anomalies,
+    predictionSource,
+    dependencies: {
+      prediction: predictionStatus,
+      anomalies: anomalyStatus,
+    },
   };
 
   if (redis) {
     try {
-      await redis.set(cacheKey, report, { ex: 3600 }); // Cache for 1 hour
+      await withTimeout(
+        redis.set(cacheKey, report, { ex: 3600 }),
+        REDIS_TIMEOUT_MS,
+        "Redis write",
+      ); // Cache for 1 hour
     } catch (err) {
       console.error("Redis cache write error:", err);
     }
@@ -215,6 +336,7 @@ Deno.serve(async (req: Request) => {
       ...corsHeaders,
       "Content-Type": "application/json",
       "X-Cache": "MISS",
+      "X-Prediction-Source": predictionSource,
     },
   });
 });

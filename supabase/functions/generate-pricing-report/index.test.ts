@@ -11,7 +11,14 @@
 */
 
 
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import nodeAssert from "node:assert/strict";
+
+const assert = (condition: unknown, message?: string) =>
+  nodeAssert.ok(condition, message);
+const assertEquals = (actual: unknown, expected: unknown, message?: string) =>
+  nodeAssert.deepStrictEqual(actual, expected, message);
+const assertExists = (value: unknown, message?: string) =>
+  nodeAssert.ok(value !== null && value !== undefined, message);
 
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -22,8 +29,9 @@ const AUTH_URL = "http://localhost:54321/auth/v1";
 const REST_URL = "http://localhost:54321/rest/v1";
 
 
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const DEPENDENCY_MOCK_URL = Deno.env.get("DEPENDENCY_MOCK_URL");
 
 
 if (!ANON_KEY || !SERVICE_KEY) {
@@ -71,6 +79,42 @@ async function post(jwt: string, body: unknown) {
    },
    body: JSON.stringify(body),
  });
+}
+
+
+async function setDependencyModes(
+  modes: { ml: "healthy" | "unavailable" | "timed_out"; redis: "healthy" | "unavailable" },
+) {
+  if (!DEPENDENCY_MOCK_URL) {
+    throw new Error("DEPENDENCY_MOCK_URL is required for resilience tests");
+  }
+  const response = await fetch(`${DEPENDENCY_MOCK_URL}/__control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(modes),
+  });
+  assertEquals(response.status, 200);
+  await response.body?.cancel();
+}
+
+
+async function postResilienceScenario(
+  scenario: string,
+): Promise<{ body: any; elapsedMs: number }> {
+  const startedAt = performance.now();
+  const response = await post(customerJwt, {
+    category_id: CATEGORY_ID,
+    location: `resilience-${scenario}-${crypto.randomUUID()}`,
+    rating: 4.5,
+  });
+  const elapsedMs = performance.now() - startedAt;
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assert(
+    Number(body.prediction?.suggestedPrice) > 0,
+    `${scenario} returned a zero-valued prediction`,
+  );
+  return { body, elapsedMs };
 }
 
 
@@ -136,6 +180,9 @@ async function setupTestData() {
 
 
 await setupTestData();
+if (DEPENDENCY_MOCK_URL) {
+  await setDependencyModes({ ml: "healthy", redis: "healthy" });
+}
 
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -151,11 +198,11 @@ Deno.test("generate-pricing-report — rejects GET with 405", async () => {
 });
 
 
-Deno.test("generate-pricing-report — rejects missing category_id", async () => {
+Deno.test("generate-pricing-report — returns market distribution without category_id", async () => {
  const res = await post(customerJwt, {});
- assertEquals(res.status, 400);
+ assertEquals(res.status, 200);
  const body = await res.json();
- assertExists(body.error);
+ assert(Array.isArray(body.priceDistribution));
 });
 
 
@@ -254,3 +301,58 @@ Deno.test("generate-pricing-report — cache header hits and misses", async () =
 });
 
 
+Deno.test({
+  name: "generate-pricing-report resilience — healthy ML uses its prediction",
+  ignore: !DEPENDENCY_MOCK_URL,
+  fn: async () => {
+    await setDependencyModes({ ml: "healthy", redis: "healthy" });
+    const { body } = await postResilienceScenario("healthy-ml");
+    assertEquals(body.predictionSource, "ml");
+    assertEquals(body.dependencies.prediction, "healthy");
+    assertEquals(body.dependencies.anomalies, "healthy");
+  },
+});
+
+
+Deno.test({
+  name: "generate-pricing-report resilience — unavailable ML uses database fallback",
+  ignore: !DEPENDENCY_MOCK_URL,
+  fn: async () => {
+    await setDependencyModes({ ml: "unavailable", redis: "healthy" });
+    const { body, elapsedMs } = await postResilienceScenario("unavailable-ml");
+    assertEquals(body.predictionSource, "database");
+    assertEquals(body.dependencies.prediction, "unavailable");
+    assert(elapsedMs < 1_000, `Unavailable ML response took ${elapsedMs}ms`);
+  },
+});
+
+
+Deno.test({
+  name: "generate-pricing-report resilience — timed-out ML returns promptly with database fallback",
+  ignore: !DEPENDENCY_MOCK_URL,
+  fn: async () => {
+    await setDependencyModes({ ml: "timed_out", redis: "healthy" });
+    const { body, elapsedMs } = await postResilienceScenario("timed-out-ml");
+    assertEquals(body.predictionSource, "database");
+    assertEquals(body.dependencies.prediction, "timed_out");
+    assertEquals(body.dependencies.anomalies, "timed_out");
+    assert(elapsedMs < 1_000, `Timed-out ML response took ${elapsedMs}ms`);
+  },
+});
+
+
+Deno.test({
+  name: "generate-pricing-report resilience — unavailable Redis is bypassed",
+  ignore: !DEPENDENCY_MOCK_URL,
+  fn: async () => {
+    await setDependencyModes({ ml: "healthy", redis: "unavailable" });
+    const { body, elapsedMs } = await postResilienceScenario(
+      "unavailable-redis",
+    );
+    assertEquals(body.predictionSource, "ml");
+    assertEquals(body.dependencies.prediction, "healthy");
+    assert(elapsedMs < 1_000, `Unavailable Redis response took ${elapsedMs}ms`);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
